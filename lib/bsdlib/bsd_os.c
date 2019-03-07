@@ -49,12 +49,56 @@ static const nrfx_uarte_t uarte_inst = NRFX_UARTE_INSTANCE(1);
 
 void IPC_IRQHandler(void);
 
-int32_t bsd_os_timedwait(uint32_t context, uint32_t timeout)
+struct sleeping_thread {
+	sys_snode_t node;
+	struct k_sem sem;
+};
+
+static sys_slist_t sleeping_threads;
+
+int32_t bsd_os_timedwait(uint32_t context, int32_t *timeout)
 {
-	/* TODO: to be implemented */
+	struct sleeping_thread thread;
+	u32_t key;
+	s64_t entry, remaining;
+
+	entry = k_uptime_get();
+
+	if (*timeout == 0) {
+		k_yield();
+		return NRF_ETIMEDOUT;
+	}
+
+	if (*timeout < 0) {
+		*timeout = K_FOREVER;
+	}
+
+	k_sem_init(&thread.sem, 0, 1);
+
+	key = irq_lock();
+	sys_slist_append(&sleeping_threads, &thread.node);
+	irq_unlock(key);
+
+	(void)k_sem_take(&thread.sem, *timeout);
+
+	key = irq_lock();
+	sys_slist_find_and_remove(&sleeping_threads, &thread.node);
+	irq_unlock(key);
+
+	if (*timeout == K_FOREVER) {
+		return 0;
+	}
+
+	/* Calculate how much time is left until timeout. */
+	remaining = *timeout - (k_uptime_get() - entry);
+	*timeout = remaining > 0 ? remaining : 0;
+
+	if (*timeout == 0) {
+		return NRF_ETIMEDOUT;
+	}
+
 	return 0;
 }
-
 
 void bsd_os_errno_set(int err_code)
 {
@@ -183,12 +227,21 @@ ISR_DIRECT_DECLARE(ipc_proxy_irq_handler)
 	IPC_IRQHandler();
 	ISR_DIRECT_PM(); /* PM done after servicing interrupt for best latency
 			  */
+
 	return 1; /* We should check if scheduling decision should be made */
 }
 
 ISR_DIRECT_DECLARE(rpc_proxy_irq_handler)
 {
 	bsd_os_application_irq_handler();
+
+	struct sleeping_thread *thread;
+
+	/* Wake up all sleeping threads. */
+	SYS_SLIST_FOR_EACH_CONTAINER(&sleeping_threads, thread, node) {
+		k_sem_give(&thread->sem);
+	}
+
 	ISR_DIRECT_PM(); /* PM done after servicing interrupt for best latency
 			  */
 	return 1; /* We should check if scheduling decision should be made */
@@ -249,6 +302,8 @@ void trace_uart_init(void)
 /* This function is called by bsd_init and must not be called explicitly. */
 void bsd_os_init(void)
 {
+	sys_slist_init(&sleeping_threads);
+
 	read_task_create();
 
 	/* Configure and enable modem tracing over UART. */
