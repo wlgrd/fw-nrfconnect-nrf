@@ -1,0 +1,4 @@
+tests:
+  production.thingy91:
+    platform_whitelist: nrf52840_pca10056 nrf9160_pca20035
+    tags: thingy91 production_test
