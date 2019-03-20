@@ -29,6 +29,8 @@ manifest:
       url-base: https://github.com/NordicPlayground
     - name: jtguggedal
       url-base: https://github.com/jtguggedal
+    - name: joakimtoe
+      url-base: https://github.com/joakimtoe
 
   # The list of external projects for the nRF Connect SDK.
   #
@@ -40,7 +42,8 @@ manifest:
       remote: jtguggedal
     - name: fw-nrfconnect-mcuboot
       path: mcuboot
-      revision: 59fde9c792bfaa36887c860fb8cd0ca1f1bc4db5
+      revision: 59fcf18dba985cd23b35d48843b9379d5466030f
+      remote: joakimtoe
     - name: nrfxlib
       path: nrfxlib
       revision: d98b59bdff2b533f5afb7bdad229eaeb4a931882
