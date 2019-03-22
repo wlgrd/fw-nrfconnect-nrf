@@ -255,8 +255,5 @@ void main(void)
 		if (wait(remaining) > 0) {
 			coap_input();
 		}
-
-		/* A workaround for incomplete bsd_os_timedwait implementation. */
-		k_sleep(K_MSEC(10));
 	}
 }
