@@ -46,7 +46,8 @@ manifest:
       remote: joakimtoe
     - name: nrfxlib
       path: nrfxlib
-      revision: d98b59bdff2b533f5afb7bdad229eaeb4a931882
+      revision: c725827ce7bb5c9f038efcf86979b13c87292bb4
+      remote: jtguggedal
 
   self:
     path: nrf
