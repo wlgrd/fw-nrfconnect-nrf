@@ -42,6 +42,8 @@
 #define TRACE_IRQ EGU2_IRQn
 #define TRACE_IRQ_PRIORITY 6
 
+#define MAX_TIMEOUT K_MSEC(500)
+
 #ifdef CONFIG_BSD_LIBRARY_TRACE_ENABLED
 /* Use UARTE1 as a dedicated peripheral to print traces. */
 static const nrfx_uarte_t uarte_inst = NRFX_UARTE_INSTANCE(1);
@@ -61,6 +63,7 @@ int32_t bsd_os_timedwait(uint32_t context, int32_t *timeout)
 	struct sleeping_thread thread;
 	u32_t key;
 	s64_t entry, remaining;
+	int adjusted_timeout;
 
 	entry = k_uptime_get();
 
@@ -71,6 +74,11 @@ int32_t bsd_os_timedwait(uint32_t context, int32_t *timeout)
 
 	if (*timeout < 0) {
 		*timeout = K_FOREVER;
+		adjusted_timeout = K_MSEC(500);
+	} else if (*timeout > MAX_TIMEOUT) {
+		adjusted_timeout = MAX_TIMEOUT;
+	} else {
+		adjusted_timeout = *timeout;
 	}
 
 	k_sem_init(&thread.sem, 0, 1);
@@ -79,7 +87,7 @@ int32_t bsd_os_timedwait(uint32_t context, int32_t *timeout)
 	sys_slist_append(&sleeping_threads, &thread.node);
 	irq_unlock(key);
 
-	(void)k_sem_take(&thread.sem, *timeout);
+	(void)k_sem_take(&thread.sem, adjusted_timeout);
 
 	key = irq_lock();
 	sys_slist_find_and_remove(&sleeping_threads, &thread.node);
