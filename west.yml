@@ -42,7 +42,7 @@ manifest:
       remote: jtguggedal
     - name: fw-nrfconnect-mcuboot
       path: mcuboot
-      revision: 59fcf18dba985cd23b35d48843b9379d5466030f
+      revision: 3d0dc1080e024017eba8903cf2b64bd33fc62c92
       remote: joakimtoe
     - name: nrfxlib
       path: nrfxlib
