@@ -5,43 +5,110 @@
  */
 
 #include <ztest.h>
+#include <sensor.h>
+#include <nrf_cloud.h>
+#include <dk_buttons_and_leds.h>
+#define BUTTON_1		BIT(0)
+#define BUTTON_2		BIT(1)
+#define SWITCH_1		BIT(2)
+#define SWITCH_2		BIT(3)
 
-void test_xtal_32khz(void)
+#define LEDS_PATTERN_WAIT	(DK_LED2_MSK | DK_LED3_MSK)
+#define LEDS_PATTERN_ENTRY	(DK_LED1_MSK | DK_LED2_MSK)
+#define LEDS_PATTERN_DONE	(DK_LED2_MSK | DK_LED3_MSK)
+#define LEDS_ERROR_UNKNOWN	(DK_ALL_LEDS_MSK)
+#define LEDS_RED                DK_LED1_MSK
+#define LEDS_GREEN              DK_LED2_MSK
+#define LEDS_BLUE               DK_LED3_MSK
+
+static void ADXL372(void)
 {
-	zassert_true(true, "32khz passed test, yey");
+        dk_set_leds(LEDS_RED);
+	struct device *dev;
+	dev = device_get_binding(__func__);
+	zassert_not_null(dev, "Failed to get %s\n", __func__);
+        dk_set_leds(DK_NO_LEDS_MSK);
 }
-void test_hig_accell(void)
+
+static void ADXL362(void)
 {
-	zassert_true(false, 
-	"High G Accelerometer did not pass the test\r\n!!! \
-	REASON: \r\n!!! FALSE IS NOT TRUE\r\n"
-	);
+        dk_set_leds(LEDS_BLUE);
+	struct device *dev;
+	dev = device_get_binding(__func__);
+	zassert_not_null(dev, "Failed to get %s \n", __func__);
+        dk_set_leds(DK_NO_LEDS_MSK);
 }
-void test_bme680(void)
+
+static void BME680(void)
 {
-	zassert_true(true, "bm3680 passed test, yey");
+        dk_set_leds(LEDS_GREEN);
+	struct device *dev;
+	dev = device_get_binding(__func__);
+	zassert_not_null(dev, "Failed to get %s \n", __func__);
+        dk_set_leds(DK_NO_LEDS_MSK);
 }
-void test_BUZZER(void)
+static void BH1749(void)
 {
-	zassert_true(true, "BUZZER failed test, nooo");
+	struct device *dev;
+	dev = device_get_binding(__func__);
+	zassert_not_null(dev, "Failed to get %s \n", __func__);
+}
+
+static void BUTTON(void)
+{
+        u32_t state, has_changed;
+
+        
+        while(1)
+        {
+                dk_set_leds(LEDS_RED);
+                dk_read_buttons(&state, &has_changed);
+                k_sleep(200);
+                dk_set_leds(DK_NO_LEDS_MSK);
+                k_sleep(200);
+        };
+                
+
+        
+}
+static void button_handler(u32_t buttons, u32_t has_changed)
+{
 }
 
 void test_main(void)
 {
+	int err;
+	err = dk_leds_init();
+	if (err) {
+		printk("Could not initialize leds, err code: %d\n", err);
+	}
+	err = dk_buttons_init(button_handler);
+	if (err) {
+		printk("Could not initialize buttons, err code: %d\n", err);
+	}
+
 	PRINT("Starting production test - thingy:91\r\n");
-	PRINT("Adding tests\r\n");
-	k_sleep(1500);
-	ztest_test_suite(thingy91_production,
-			ztest_unit_test(test_xtal_32khz),
-			ztest_unit_test(test_hig_accell),
-			ztest_unit_test(test_bme680),
-			ztest_unit_test(test_BUZZER)
-			);
+	PRINT("Waiting for test parameters...\r\n");
+
+        for(u8_t i = 0; i < 5; i++)
+        {
+	        dk_set_leds(LEDS_PATTERN_WAIT);
+                k_sleep(1);
+                dk_set_leds(DK_NO_LEDS_MSK);
+                k_sleep(200);
+        };
+	PRINT("Got test parameters!\r\n");
+	ztest_test_suite(thingy91_production,	/* Name of test suite */
+		ztest_unit_test(ADXL372),      	/* Add tests... */
+		ztest_unit_test(BME680),
+		ztest_unit_test(ADXL362),
+		ztest_unit_test(BH1749)
+	);
 	while(1)
 	{
-		PRINT("Starting test suite\r\n");
 		ztest_run_test_suite(thingy91_production);
-		PRINT("Finished test suite, restarting...\r\n");
 		k_sleep(100);
+		break;
 	}
+	while(1);
 }
