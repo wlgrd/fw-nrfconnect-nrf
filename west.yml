@@ -29,6 +29,8 @@ manifest:
       url-base: https://github.com/NordicPlayground
     - name: jtguggedal
       url-base: https://github.com/jtguggedal
+    - name: wlgrd
+      url-base: https://github.com/wlgrd
 
   # The list of external projects for the nRF Connect SDK.
   #
@@ -36,8 +38,8 @@ manifest:
     - name: fw-nrfconnect-zephyr
       path: zephyr
       west-commands: scripts/west-commands.yml
-      revision: pca20035_pilot_rc1
-      remote: jtguggedal
+      revision: 8dd9fa0c045ba51b8abc2adce78615467d1de088
+      remote: wlgrd
     - name: fw-nrfconnect-mcuboot
       path: mcuboot
       revision: 59fde9c792bfaa36887c860fb8cd0ca1f1bc4db5
