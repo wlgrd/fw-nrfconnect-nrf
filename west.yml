@@ -31,6 +31,8 @@ manifest:
       url-base: https://github.com/jtguggedal
     - name: joakimtoe
       url-base: https://github.com/joakimtoe
+    - name: wlgrd
+      url-base: https://github.com/wlgrd
 
   # The list of external projects for the nRF Connect SDK.
   #
@@ -38,8 +40,8 @@ manifest:
     - name: fw-nrfconnect-zephyr
       path: zephyr
       west-commands: scripts/west-commands.yml
-      revision: 490c6e16d986ccc38c0a54a8c5178a48cc8219f7
-      remote: jtguggedal
+      revision: 8dd9fa0c045ba51b8abc2adce78615467d1de088
+      remote: wlgrd
     - name: fw-nrfconnect-mcuboot
       path: mcuboot
       revision: 45b99f43c7ed3469c1a2df56dbb135f8ebfa50c6
