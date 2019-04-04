@@ -202,17 +202,9 @@ static void socket_thread_fn(void *arg1, void *arg2, void *arg3)
 	ARG_UNUSED(arg3);
 
 	while (1) {
-		/* Poll the socket for incoming data. */
-		err = poll(fds, nfds, K_FOREVER);
-		if (err < 0) {
-			LOG_ERR("Poll error: %d\n", err);
-		}
-
-		k_mutex_lock(&socket_mutex, K_FOREVER);
 		/* Read AT socket in non-blocking mode. */
 		r_bytes = recv(at_socket_fd, at_read_buff,
-				sizeof(at_read_buff), MSG_DONTWAIT);
-		k_mutex_unlock(&socket_mutex);
+				sizeof(at_read_buff), 0);
 
 		/* Forward the data over UART if any. */
 		/* If no data, errno is set to EGAIN and we will try again. */
