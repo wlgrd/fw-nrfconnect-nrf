@@ -194,7 +194,6 @@ static int at_uart_init(char *uart_dev_name)
 static void socket_thread_fn(void *arg1, void *arg2, void *arg3)
 {
 	u8_t at_read_buff[CONFIG_AT_HOST_SOCKET_BUF_SIZE] = {0};
-	int err;
 	int r_bytes;
 
 	ARG_UNUSED(arg1);
