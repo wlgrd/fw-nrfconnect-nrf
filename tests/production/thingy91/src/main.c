@@ -54,23 +54,24 @@ static void BH1749(void)
 	zassert_not_null(dev, "Failed to get %s \n", __func__);
 }
 
-static void BUTTON(void)
+static void test_button(void)
 {
-        u32_t state, has_changed;
-
-        
-        while(1)
-        {
-                dk_set_leds(LEDS_RED);
-                dk_read_buttons(&state, &has_changed);
-                k_sleep(200);
-                dk_set_leds(DK_NO_LEDS_MSK);
-                k_sleep(200);
-        };
-                
-
-        
+	u32_t volatile state, newstate, timeout = 0;
+	state = dk_get_buttons();
+        newstate = state;
+	printk("Waiting for button press...");
+	dk_set_leds(LEDS_RED);
+	while ((state == newstate) && (timeout < button_test_timeout)) {
+		newstate = dk_get_buttons();
+		timeout++;
+		k_sleep(100);
+	}
+	PRINT("timeout: %d \n", timeout);
+        all_tests_succeeded = ( (timeout != button_test_timeout) ? all_tests_succeeded : false);
+	zassert_not_equal(timeout, button_test_timeout, "Button test timed out");
+	dk_set_leds(DK_NO_LEDS_MSK);
 }
+
 static void button_handler(u32_t buttons, u32_t has_changed)
 {
 }
