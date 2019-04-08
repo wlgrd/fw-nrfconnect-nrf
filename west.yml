@@ -29,10 +29,8 @@ manifest:
       url-base: https://github.com/NordicPlayground
     - name: jtguggedal
       url-base: https://github.com/jtguggedal
-    - name: joakimtoe
-      url-base: https://github.com/joakimtoe
     - name: wlgrd
-      url-base: https://github.com/wlgrd
+      url-base: https://github.com/wlgrds
 
   # The list of external projects for the nRF Connect SDK.
   #
