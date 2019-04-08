@@ -231,6 +231,12 @@ static int power_mgmt_init(void)
 		return err;
 	}
 
+	err = adp536x_buck_discharge_set(true);
+	if (err) {
+		return err;
+	}
+
+
 	/* The value 0x07 sets VBUS current limit to 500 mA. */
 	err = adp536x_vbus_current_set(0x07);
 	if (err) {
