@@ -72,9 +72,9 @@ static void at_cmd_send(struct k_work *work)
 
 	ARG_UNUSED(work);
 
-	k_mutex_lock(&socket_mutex, K_FOREVER);
+	// k_mutex_lock(&socket_mutex, K_FOREVER);
 	bytes_sent = send(at_socket_fd, at_buf, at_buf_len, 0);
-	k_mutex_unlock(&socket_mutex);
+	// k_mutex_unlock(&socket_mutex);
 
 	if (bytes_sent <= 0) {
 		LOG_ERR("Could not send AT command to modem: %d", bytes_sent);
@@ -194,6 +194,7 @@ static int at_uart_init(char *uart_dev_name)
 static void socket_thread_fn(void *arg1, void *arg2, void *arg3)
 {
 	u8_t at_read_buff[CONFIG_AT_HOST_SOCKET_BUF_SIZE] = {0};
+	int err;
 	int r_bytes;
 
 	ARG_UNUSED(arg1);
@@ -201,9 +202,17 @@ static void socket_thread_fn(void *arg1, void *arg2, void *arg3)
 	ARG_UNUSED(arg3);
 
 	while (1) {
+		/* Poll the socket for incoming data. */
+		// err = poll(fds, nfds, K_FOREVER);
+		// if (err < 0) {
+		// 	LOG_ERR("Poll error: %d\n", err);
+		// }
+
+		// k_mutex_lock(&socket_mutex, K_FOREVER);
 		/* Read AT socket in non-blocking mode. */
 		r_bytes = recv(at_socket_fd, at_read_buff,
 				sizeof(at_read_buff), 0);
+		// k_mutex_unlock(&socket_mutex);
 
 		/* Forward the data over UART if any. */
 		/* If no data, errno is set to EGAIN and we will try again. */
