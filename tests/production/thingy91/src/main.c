@@ -8,6 +8,8 @@
 #include <sensor.h>
 #include <nrf_cloud.h>
 #include <dk_buttons_and_leds.h>
+#include <SEGGER_RTT.h>
+
 #define BUTTON_1		BIT(0)
 #define BUTTON_2		BIT(1)
 #define SWITCH_1		BIT(2)
@@ -20,6 +22,17 @@
 #define LEDS_RED                DK_LED1_MSK
 #define LEDS_GREEN              DK_LED2_MSK
 #define LEDS_BLUE               DK_LED3_MSK
+
+//#define ENABLE_RTT_CMD_GET
+
+#if defined(ENABLE_RTT_CMD_GET)
+static u8_t     m_rtt_keys[20];
+static u8_t     m_rtt_rx_keyindex = 0;
+bool            m_test_params_received = false;
+static u8_t     msg[3];
+#endif
+static u8_t     button_test_timeout = 80;
+bool            all_tests_succeeded = true;
 
 static void ADXL372(void)
 {
@@ -76,6 +89,16 @@ static void button_handler(u32_t buttons, u32_t has_changed)
 {
 }
 
+#if defined(ENABLE_RTT_CMD_GET)
+static void check_rtt_command(u8_t *data, u8_t len)
+{
+        // static u8_t * msg;
+        memcpy(msg, data, 3);
+        printk("Params received: %s \r\n", msg);
+        m_test_params_received = true;
+}
+#endif
+
 void test_main(void)
 {
 	int err;
@@ -89,7 +112,28 @@ void test_main(void)
 	}
 
 	PRINT("Starting production test - thingy:91\r\n");
+        #if defined(ENABLE_RTT_CMD_GET)
 	PRINT("Waiting for test parameters...\r\n");
+        while(!m_test_params_received)
+        {
+                if(SEGGER_RTT_HasKey())
+                {
+                        // Fetch the first key in the buffer
+                        m_rtt_keys[m_rtt_rx_keyindex] = SEGGER_RTT_GetKey();
+
+                        // Q is set as "EOL", so parse when received
+                        if(m_rtt_keys[m_rtt_rx_keyindex] == 'Q')
+                        {
+                                check_rtt_command(m_rtt_keys, ++m_rtt_rx_keyindex);
+                                m_rtt_rx_keyindex = 0;
+                                memset(m_rtt_keys, 0, sizeof(m_rtt_keys));
+                        } else{
+                                // Keep buffering data
+                                m_rtt_rx_keyindex++;
+                        }
+                }
+        }
+        #endif
 
         for(u8_t i = 0; i < 5; i++)
         {
@@ -100,7 +144,8 @@ void test_main(void)
         };
 	PRINT("Got test parameters!\r\n");
 	ztest_test_suite(thingy91_production,	/* Name of test suite */
-		ztest_unit_test(ADXL372),      	/* Add tests... */
+		ztest_unit_test(test_button),   /* Add tests... */
+		ztest_unit_test(ADXL372),
 		ztest_unit_test(BME680),
 		ztest_unit_test(ADXL362),
 		ztest_unit_test(BH1749)
@@ -111,5 +156,4 @@ void test_main(void)
 		k_sleep(100);
 		break;
 	}
-	while(1);
 }
