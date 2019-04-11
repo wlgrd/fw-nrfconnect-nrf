@@ -41,17 +41,16 @@ defined(CONFIG_NET_SOCKETS_OFFLOAD)
 	int at_socket_fd;
 	int buffer;
 	u8_t read_buffer[LC_MAX_READ_LENGTH];
-
 	at_socket_fd = socket(AF_LTE, 0, NPROTO_AT);
 	if (at_socket_fd == -1) {
-		LOG_ERR("AT socket could not be opened");
+		__ASSERT(false, "AT socket could not be opened");
 		return -EFAULT;
 	}
 
 	LOG_DBG("AT CMD: %s", AT_CMD_TRACE);
 	buffer = send(at_socket_fd, AT_CMD_TRACE, AT_CMD_TRACE_LEN, 0);
 	if (buffer != AT_CMD_TRACE_LEN) {
-		LOG_ERR("XMODEMTRACE command failed");
+		__ASSERT(false, "XMODEMTRACE command failed");
 		close(at_socket_fd);
 		__ASSERT_NO_MSG(false);
 		return -EIO;
@@ -61,7 +60,7 @@ defined(CONFIG_NET_SOCKETS_OFFLOAD)
 	LOG_DBG("AT RESP: %s", read_buffer);
 	if ((buffer < 2) ||
 	    (memcmp("OK", read_buffer, 2 != 0))) {
-		LOG_ERR("XMODEMTRACE received unexpected response");
+		__ASSERT(false, "XMODEMTRACE received unexpected response");
 		close(at_socket_fd);
 		__ASSERT_NO_MSG(false);
 		return -EIO;
@@ -72,7 +71,7 @@ defined(CONFIG_NET_SOCKETS_OFFLOAD)
 	LOG_DBG("AT CMD: %s", AT_CMD_MAGPIO);
 	buffer = send(at_socket_fd, AT_CMD_MAGPIO, AT_CMD_MAGPIO_LEN, 0);
 	if (buffer != AT_CMD_MAGPIO_LEN) {
-		LOG_ERR("MAGPIO command failed");
+		__ASSERT(false, "MAGPIO command failed");
 		close(at_socket_fd);
 		__ASSERT_NO_MSG(false);
 		return -EIO;
@@ -82,7 +81,7 @@ defined(CONFIG_NET_SOCKETS_OFFLOAD)
 	LOG_DBG("AT RESP: %s", read_buffer);
 	if ((buffer < 2) ||
 	    (memcmp("OK", read_buffer, 2 != 0))) {
-		LOG_ERR("MAGPIO command failed");
+		__ASSERT(false, "MAGPIO command failed");
 		close(at_socket_fd);
 		__ASSERT_NO_MSG(false);
 		return -EIO;
@@ -144,14 +143,14 @@ int leds_init(void)
 
 	gpio_dev = device_get_binding(LED0_GPIO_CONTROLLER);
 	if (gpio_dev == NULL) {
-		LOG_ERR("Could not get binding to LED GPIO controller");
+		__ASSERT(false, "Could not get binding to LED GPIO controller");
 		return -ENODEV;
 	}
 
 	err = gpio_pin_configure(gpio_dev, LED0_GPIO_PIN,
 			   GPIO_DIR_OUT);
 	if (err) {
-		LOG_ERR("gpio_pin_configure() failed with error: %d", err);
+		__ASSERT(false, "gpio_pin_configure() failed with error: %d", err);
 		return err;
 	}
 	gpio_pin_write(gpio_dev, LED0_GPIO_PIN, 0);
@@ -159,7 +158,7 @@ int leds_init(void)
 	err = gpio_pin_configure(gpio_dev, LED1_GPIO_PIN,
 				 GPIO_DIR_OUT);
 	if (err) {
-		LOG_ERR("gpio_pin_configure() failed with error: %d", err);
+		__ASSERT(false, "gpio_pin_configure() failed with error: %d", err);
 		return err;
 	}
 	gpio_pin_write(gpio_dev, LED1_GPIO_PIN, 0);
@@ -167,7 +166,7 @@ int leds_init(void)
 	err = gpio_pin_configure(gpio_dev, LED2_GPIO_PIN,
 				 GPIO_DIR_OUT);
 	if (err) {
-		LOG_ERR("gpio_pin_configure() failed with error: %d", err);
+		__ASSERT(false, "gpio_pin_configure() failed with error: %d", err);
 		return err;
 	}
 	gpio_pin_write(gpio_dev, LED2_GPIO_PIN, 0);
@@ -175,7 +174,7 @@ int leds_init(void)
 	err = gpio_pin_configure(gpio_dev, DT_GPIO_LEDS_SENSE_LED0_GPIO_PIN,
 				 GPIO_DIR_OUT);
 	if (err) {
-		LOG_ERR("gpio_pin_configure() failed with error: %d", err);
+		__ASSERT(false, "gpio_pin_configure() failed with error: %d", err);
 		return err;
 	}
 	gpio_pin_write(gpio_dev, DT_GPIO_LEDS_SENSE_LED0_GPIO_PIN, 0);
@@ -183,7 +182,7 @@ int leds_init(void)
 	err = gpio_pin_configure(gpio_dev, DT_GPIO_LEDS_SENSE_LED1_GPIO_PIN,
 				 GPIO_DIR_OUT);
 	if (err) {
-		LOG_ERR("gpio_pin_configure() failed with error: %d", err);
+		__ASSERT(false, "gpio_pin_configure() failed with error: %d", err);
 		return err;
 	}
 	gpio_pin_write(gpio_dev, DT_GPIO_LEDS_SENSE_LED1_GPIO_PIN, 0);
@@ -191,7 +190,7 @@ int leds_init(void)
 	err = gpio_pin_configure(gpio_dev, DT_GPIO_LEDS_SENSE_LED2_GPIO_PIN,
 				 GPIO_DIR_OUT);
 	if (err) {
-		LOG_ERR("gpio_pin_configure() failed with error: %d", err);
+		__ASSERT(false, "gpio_pin_configure() failed with error: %d", err);
 		return err;
 	}
 	gpio_pin_write(gpio_dev, DT_GPIO_LEDS_SENSE_LED2_GPIO_PIN, 0);
@@ -207,7 +206,7 @@ static int power_mgmt_init(void)
 
 	err = leds_init();
 	if (err) {
-		LOG_ERR("Could not configure LEDs, error %d", err);
+		__ASSERT(false, "Could not configure LEDs, error %d", err);
 		return err;
 	}
 
@@ -270,34 +269,34 @@ static int pca20035_board_init(struct device *dev)
 #ifdef CONFIG_BOARD_NRF9160_PCA20035_V0_2_2NS
 	err = pca20035_power_ctrl_pins_init();
 	if (err) {
-		LOG_ERR("pca20035_power_ctrl_pins_init: failed! %d", err);
+		__ASSERT(false, "pca20035_power_ctrl_pins_init: failed! %d", err);
 		return err;
 	}
 #endif
 
 	err = power_mgmt_init();
 	if (err) {
-		LOG_ERR("power_mgmt_init: failed! %d", err);
+		__ASSERT(false, "power_mgmt_init: failed! %d", err);
 		return err;
 	}
 
 #ifdef CONFIG_BOARD_NRF9160_PCA20035_V0_2_2NS
 	err = pca20035_power_1v8_set(true);
 	if (err) {
-		LOG_ERR("pca20035_power_1v8_set: failed! %d", err);
+		__ASSERT(false, "pca20035_power_1v8_set: failed! %d", err);
 		return err;
 	}
 
 	err = pca20035_power_3v3_set(true);
 	if (err) {
-		LOG_ERR("pca20035_power_3v3_set: failed! %d", err);
+		__ASSERT(false, "pca20035_power_3v3_set: failed! %d", err);
 		return err;
 	}
 #endif
 
 	err = pca20035_magpio_configure();
 	if (err) {
-		LOG_ERR("pca20035_magpio_configure: failed! %d", err);
+		__ASSERT(false, "pca20035_magpio_configure: failed! %d", err);
 		return err;
 	}
 
