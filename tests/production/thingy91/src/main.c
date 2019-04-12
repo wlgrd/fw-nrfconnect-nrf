@@ -7,7 +7,9 @@
 #include <ztest.h>
 #include <sensor.h>
 #include <nrf_cloud.h>
+#include <gpio.h>
 #include <dk_buttons_and_leds.h>
+//#include <pwm.h>
 #include <SEGGER_RTT.h>
 
 #define BUTTON_1		BIT(0)
@@ -22,6 +24,7 @@
 #define LEDS_RED                DK_LED1_MSK
 #define LEDS_GREEN              DK_LED2_MSK
 #define LEDS_BLUE               DK_LED3_MSK
+#define BUZZER_PIN              28
 
 //#define ENABLE_RTT_CMD_GET
 
@@ -85,6 +88,26 @@ static void test_button(void)
 	dk_set_leds(DK_NO_LEDS_MSK);
 }
 
+static void test_buzzer(void)
+{
+        //static struct device *gpio_dev;
+        static struct device *pwm_dev;
+        pwm_dev = device_get_binding(DT_NORDIC_NRF_PWM_PWM_0_LABEL);
+        //gpio_dev = device_get_binding(DT_GPIO_P0_DEV_NAME);
+
+        if (!pwm_dev) {
+                printk("Cannot bind pwm device");
+                return -ENODEV;
+	}
+        pwm_pin_set_usec(pwm_dev, BUZZER_PIN, 5, 5);
+        k_sleep(1200);
+        pwm_pin_set_usec(pwm_dev, BUZZER_PIN, 10, 10);
+        k_sleep(1200);
+        // pwm_pin_set_usec(pwm_dev, BUZZER_PIN, 50, 50);
+        // k_sleep(200);
+        // pwm_pin_set_usec(pwm_dev, BUZZER_PIN, 0, 0);
+}
+
 static void button_handler(u32_t buttons, u32_t has_changed)
 {
 }
@@ -144,11 +167,11 @@ void test_main(void)
         };
 	PRINT("Got test parameters!\r\n");
 	ztest_test_suite(thingy91_production,	/* Name of test suite */
-		ztest_unit_test(test_button),   /* Add tests... */
-		ztest_unit_test(ADXL372),
-		ztest_unit_test(BME680),
-		ztest_unit_test(ADXL362),
-		ztest_unit_test(BH1749)
+		ztest_unit_test(test_buzzer)   /* Add tests... */
+		// ztest_unit_test(ADXL372),
+		// ztest_unit_test(BME680),
+		// ztest_unit_test(ADXL362),
+		// ztest_unit_test(BH1749)
 	);
 	while(1)
 	{
