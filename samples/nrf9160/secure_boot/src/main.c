@@ -335,6 +335,9 @@ static void secure_boot_config_peripherals(void)
 	/* Configure TIMER2 as non-secure */
 	secure_boot_config_peripheral(
 		NRFX_PERIPHERAL_ID_GET(NRF_TIMER2_S), 0);
+	/* Configure PWM0 as non-secure */
+	secure_boot_config_peripheral(
+		NRFX_PERIPHERAL_ID_GET(NRF_PWM0_S), 0);
 }
 
 static void secure_boot_config(void)
