@@ -11,5 +11,4 @@
 &pwm0 {
 	status = "ok";
 	ch0-pin = <28>;
-	ch0-inverted;
 };

@@ -9,7 +9,8 @@
 #include <nrf_cloud.h>
 #include <gpio.h>
 #include <dk_buttons_and_leds.h>
-//#include <pwm.h>
+#include <device.h>
+#include <pwm.h>
 #include <SEGGER_RTT.h>
 
 #define BUTTON_1		BIT(0)
@@ -18,15 +19,18 @@
 #define SWITCH_2		BIT(3)
 
 #define LEDS_PATTERN_WAIT	(DK_LED2_MSK | DK_LED3_MSK)
-#define LEDS_PATTERN_ENTRY	(DK_LED1_MSK | DK_LED2_MSK)
-#define LEDS_PATTERN_DONE	(DK_LED2_MSK | DK_LED3_MSK)
-#define LEDS_ERROR_UNKNOWN	(DK_ALL_LEDS_MSK)
 #define LEDS_RED                DK_LED1_MSK
 #define LEDS_GREEN              DK_LED2_MSK
 #define LEDS_BLUE               DK_LED3_MSK
-#define BUZZER_PIN              28
+#define BUZZER_PIN              28      // TP7
 
-//#define ENABLE_RTT_CMD_GET
+/* There is an issue with the pwm driver, causing a 300us delay */
+#define PWM_OFFSET      300
+#define PWM_CHANNEL     0
+#define OSC_FREQ_HZ     2700
+#define OSC_FREQ_US     ((1000000UL / OSC_FREQ_HZ))
+#define PERIOD          (OSC_FREQ_US / 2)               //> Need to set it half due to bug
+#define DUTY_CYCLE      (PERIOD / 4)                    //> Maximum 50% Duty cycle due to bug
 
 #if defined(ENABLE_RTT_CMD_GET)
 static u8_t     m_rtt_keys[20];
@@ -37,6 +41,21 @@ static u8_t     msg[3];
 static u8_t     button_test_timeout = 80;
 bool            all_tests_succeeded = true;
 
+/* Blocking call that returns when button has changed state */
+static void wait_for_new_btn_state(void)
+{
+        u32_t volatile state, newstate, timeout = 0;
+	state = dk_get_buttons();
+        newstate = state;
+	printk("Waiting for button press...");
+	dk_set_leds(LEDS_RED);
+	while ((state == newstate) && (timeout < button_test_timeout)) {
+		newstate = dk_get_buttons();
+		// timeout++;
+		k_sleep(100);
+	}
+        return;
+}
 static void ADXL372(void)
 {
         dk_set_leds(LEDS_RED);
@@ -90,22 +109,29 @@ static void test_button(void)
 
 static void test_buzzer(void)
 {
-        //static struct device *gpio_dev;
+        volatile int err_code = 0xFF;
         static struct device *pwm_dev;
+        static u32_t period = PERIOD;
+        static u32_t duty_cycle = DUTY_CYCLE;
         pwm_dev = device_get_binding(DT_NORDIC_NRF_PWM_PWM_0_LABEL);
-        //gpio_dev = device_get_binding(DT_GPIO_P0_DEV_NAME);
-
+        printk("Turning buzzer ON\n");
         if (!pwm_dev) {
-                printk("Cannot bind pwm device");
-                return -ENODEV;
-	}
-        pwm_pin_set_usec(pwm_dev, BUZZER_PIN, 5, 5);
-        k_sleep(1200);
-        pwm_pin_set_usec(pwm_dev, BUZZER_PIN, 10, 10);
-        k_sleep(1200);
-        // pwm_pin_set_usec(pwm_dev, BUZZER_PIN, 50, 50);
-        // k_sleep(200);
-        // pwm_pin_set_usec(pwm_dev, BUZZER_PIN, 0, 0);
+                zassert_unreachable("Cannot bind pwm device");
+        }
+        err_code = pwm_pin_set_usec(pwm_dev, BUZZER_PIN,
+                                period, duty_cycle);
+        if (err_code) {
+                zassert_unreachable("Unable to turn buzzer ON\n");
+                return;
+        }
+        k_sleep(1500);
+        printk("Turning buzzer OFF\n");
+        err_code = pwm_pin_set_usec(pwm_dev, BUZZER_PIN,
+                                period, 0);
+        if (err_code) {
+                zassert_unreachable("Unable to turn buzzer OFF\n");
+                return;
+        }
 }
 
 static void button_handler(u32_t buttons, u32_t has_changed)
@@ -135,27 +161,28 @@ void test_main(void)
 	}
 
 	PRINT("Starting production test - thingy:91\r\n");
-        #if defined(ENABLE_RTT_CMD_GET)
-	PRINT("Waiting for test parameters...\r\n");
-        while(!m_test_params_received)
-        {
-                if(SEGGER_RTT_HasKey())
-                {
-                        // Fetch the first key in the buffer
-                        m_rtt_keys[m_rtt_rx_keyindex] = SEGGER_RTT_GetKey();
 
-                        // Q is set as "EOL", so parse when received
-                        if(m_rtt_keys[m_rtt_rx_keyindex] == 'Q')
+        #if defined(ENABLE_RTT_CMD_GET)
+                PRINT("Waiting for test parameters...\r\n");
+                while(!m_test_params_received)
+                {
+                        if(SEGGER_RTT_HasKey())
                         {
-                                check_rtt_command(m_rtt_keys, ++m_rtt_rx_keyindex);
-                                m_rtt_rx_keyindex = 0;
-                                memset(m_rtt_keys, 0, sizeof(m_rtt_keys));
-                        } else{
-                                // Keep buffering data
-                                m_rtt_rx_keyindex++;
+                                // Fetch the first key in the buffer
+                                m_rtt_keys[m_rtt_rx_keyindex] = SEGGER_RTT_GetKey();
+
+                                // Q is set as "EOL", so parse when received
+                                if(m_rtt_keys[m_rtt_rx_keyindex] == 'Q')
+                                {
+                                        check_rtt_command(m_rtt_keys, ++m_rtt_rx_keyindex);
+                                        m_rtt_rx_keyindex = 0;
+                                        memset(m_rtt_keys, 0, sizeof(m_rtt_keys));
+                                } else{
+                                        // Keep buffering data
+                                        m_rtt_rx_keyindex++;
+                                }
                         }
                 }
-        }
         #endif
 
         for(u8_t i = 0; i < 5; i++)
@@ -167,11 +194,12 @@ void test_main(void)
         };
 	PRINT("Got test parameters!\r\n");
 	ztest_test_suite(thingy91_production,	/* Name of test suite */
-		ztest_unit_test(test_buzzer)   /* Add tests... */
-		// ztest_unit_test(ADXL372),
-		// ztest_unit_test(BME680),
-		// ztest_unit_test(ADXL362),
-		// ztest_unit_test(BH1749)
+		ztest_unit_test(test_button),   /* Add tests... */
+		ztest_unit_test(test_buzzer),
+		ztest_unit_test(ADXL372),
+		ztest_unit_test(BME680),
+		ztest_unit_test(ADXL362),
+		ztest_unit_test(BH1749)
 	);
 	while(1)
 	{
