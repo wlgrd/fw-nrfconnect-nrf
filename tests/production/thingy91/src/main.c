@@ -61,6 +61,7 @@ static void ADXL372(void)
         dk_set_leds(LEDS_RED);
 	struct device *dev;
 	dev = device_get_binding(__func__);
+	if(dev == NULL) all_tests_succeeded = false;
 	zassert_not_null(dev, "Failed to get %s\n", __func__);
         dk_set_leds(DK_NO_LEDS_MSK);
 }
@@ -70,6 +71,7 @@ static void ADXL362(void)
         dk_set_leds(LEDS_BLUE);
 	struct device *dev;
 	dev = device_get_binding(__func__);
+	if(dev == NULL) all_tests_succeeded = false;
 	zassert_not_null(dev, "Failed to get %s \n", __func__);
         dk_set_leds(DK_NO_LEDS_MSK);
 }
@@ -79,6 +81,7 @@ static void BME680(void)
         dk_set_leds(LEDS_GREEN);
 	struct device *dev;
 	dev = device_get_binding(__func__);
+	if(dev == NULL) all_tests_succeeded = false;
 	zassert_not_null(dev, "Failed to get %s \n", __func__);
         dk_set_leds(DK_NO_LEDS_MSK);
 }
@@ -86,6 +89,7 @@ static void BH1749(void)
 {
 	struct device *dev;
 	dev = device_get_binding(__func__);
+	if(dev == NULL) all_tests_succeeded = false;
 	zassert_not_null(dev, "Failed to get %s \n", __func__);
 }
 
@@ -117,11 +121,13 @@ static void test_buzzer(void)
         printk("Turning buzzer ON\n");
         if (!pwm_dev) {
                 zassert_unreachable("Cannot bind pwm device");
+		all_tests_succeeded = false;
         }
         err_code = pwm_pin_set_usec(pwm_dev, BUZZER_PIN,
                                 period, duty_cycle);
         if (err_code) {
                 zassert_unreachable("Unable to turn buzzer ON\n");
+		all_tests_succeeded = false;
                 return;
         }
         k_sleep(1500);
@@ -130,6 +136,7 @@ static void test_buzzer(void)
                                 period, 0);
         if (err_code) {
                 zassert_unreachable("Unable to turn buzzer OFF\n");
+		all_tests_succeeded = false;
                 return;
         }
 }
@@ -194,8 +201,8 @@ void test_main(void)
         };
 	PRINT("Got test parameters!\r\n");
 	ztest_test_suite(thingy91_production,	/* Name of test suite */
-		ztest_unit_test(test_button),   /* Add tests... */
-		ztest_unit_test(test_buzzer),
+		//ztest_unit_test(test_button),   /* Add tests... */
+		//ztest_unit_test(test_buzzer),
 		ztest_unit_test(ADXL372),
 		ztest_unit_test(BME680),
 		ztest_unit_test(ADXL362),
@@ -205,6 +212,8 @@ void test_main(void)
 	{
 		ztest_run_test_suite(thingy91_production);
 		k_sleep(100);
-		break;
+		// Stop execution if test failed.
+		if(!all_tests_succeeded) break;
 	}
+	dk_set_leds(LEDS_PATTERN_WAIT);
 }
