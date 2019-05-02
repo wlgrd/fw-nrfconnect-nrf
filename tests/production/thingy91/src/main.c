@@ -95,19 +95,19 @@ static void BH1749(void)
 
 static void test_button(void)
 {
-	u32_t volatile state, newstate, timeout = 0;
+	u32_t volatile state, newstate, timeout = 0, button_test_timeout = 200000;
+	PRINT("[ACTION]: Please press the button ...\n");
 	state = dk_get_buttons();
-        newstate = state;
-	printk("Waiting for button press...");
+        newstate = state;	
 	dk_set_leds(LEDS_RED);
 	while ((state == newstate) && (timeout < button_test_timeout)) {
 		newstate = dk_get_buttons();
 		timeout++;
-		k_sleep(100);
+		k_sleep(1);
 	}
 	PRINT("timeout: %d \n", timeout);
         all_tests_succeeded = ( (timeout != button_test_timeout) ? all_tests_succeeded : false);
-	zassert_not_equal(timeout, button_test_timeout, "Button test timed out");
+	zassert_not_equal(timeout, button_test_timeout, "Button test timed out\n");
 	dk_set_leds(DK_NO_LEDS_MSK);
 }
 
@@ -192,18 +192,21 @@ void test_main(void)
                 }
         #endif
 
-        for(u8_t i = 0; i < 5; i++)
-        {
-	        dk_set_leds(LEDS_PATTERN_WAIT);
-                k_sleep(1);
-                dk_set_leds(DK_NO_LEDS_MSK);
-                k_sleep(200);
-        };
+
+	dk_set_leds(LEDS_RED);
+	k_sleep(1000);
+	dk_set_leds(DK_NO_LEDS_MSK);
+	dk_set_leds(LEDS_GREEN);
+	k_sleep(1000);
+	dk_set_leds(DK_NO_LEDS_MSK);
+	dk_set_leds(LEDS_BLUE);
+	k_sleep(1000);
+	dk_set_leds(DK_NO_LEDS_MSK);
+
 	PRINT("Got test parameters!\r\n");
 	ztest_test_suite(thingy91_production,	/* Name of test suite */
-		//ztest_unit_test(test_button),   /* Add tests... */
-		//ztest_unit_test(test_buzzer),
-		ztest_unit_test(ADXL372),
+		ztest_unit_test(test_button),
+		ztest_unit_test(ADXL372),      	/* Add tests... */
 		ztest_unit_test(BME680),
 		ztest_unit_test(ADXL362),
 		ztest_unit_test(BH1749)
