@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
 
 
-if(CONFIG_TRUSTED_EXECUTION_SECURE AND !CONFIG_MCUBOOT)
+if(CONFIG_TRUSTED_EXECUTION_SECURE AND NOT DEFINED CONFIG_BOOTLOADER_MCUBOOT)
 	zephyr_library()
 	zephyr_library_sources(board_secure.c)
 endif()
