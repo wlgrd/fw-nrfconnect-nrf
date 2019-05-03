@@ -273,7 +273,7 @@ static int pca20035_test_button(void)
 					button_test_timeout = 200000;
 	printk("[ACTION]: Please press the button ...\n");
 	state = dk_get_buttons();
-	newstate = state;
+        newstate = state;
 	dk_set_leds(LEDS_RED);
 	while ((state == newstate) && (timeout < button_test_timeout)) {
 		newstate = dk_get_buttons();
