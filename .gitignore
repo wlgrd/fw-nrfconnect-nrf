@@ -9,6 +9,7 @@
 *~
 build
 build-*
+build_*
 cscope.*
 .dir
 
@@ -26,3 +27,5 @@ doc/nrf/_doxygen/
 doc/nrf/_samples/
 doc/*_warnings.txt
 doc/*_doc.log
+*.old
+*jdebug*
