@@ -8,15 +8,24 @@
 #include <device.h>
 #include <uart.h>
 #include <nrfx_power.h>
+#include <gpio.h>
 
 #define THREAD_STACKSIZE		1024
 #define UART_BUF_SIZE			58
 #define THREAD_PRIORITY			7
 
+#define MCU_IF0_PIN                     18
+#define NRF52_SPARE1                    6
+
+#define SAADC_TEST_PIN                  MCU_IF0_PIN
+
 static K_FIFO_DEFINE(usb_0_tx_fifo);
 static K_FIFO_DEFINE(usb_1_tx_fifo);
 static K_FIFO_DEFINE(uart_0_tx_fifo);
 static K_FIFO_DEFINE(uart_1_tx_fifo);
+
+/* Only used for test phase or KPT-123 */
+static struct device *gpio_dev;
 
 struct uart_data {
 	void *fifo_reserved;
@@ -76,7 +85,7 @@ static void uart_interrupt_handler(void *user_data)
 			   ((*rx)->buffer[(*rx)->len - 1] == '\0')) {
 				k_fifo_put(peer_dev_data->fifo, (*rx));
 				k_sem_give(&peer_dev_data->sem);
-				printk("Recv, %p len: %d\n", dev, (*rx)->len);
+				//printk("Recv, %p len: %d\n", dev, (*rx)->len);
 
 				(*rx) = NULL;
 			}
@@ -105,7 +114,7 @@ static void uart_interrupt_handler(void *user_data)
 			 */
 		}
 
-		printk("Sent, %p len: %d of %d\n", dev, written, buf->len);
+		//printk("Sent, %p len: %d of %d\n", dev, written, buf->len);
 
 		if (k_fifo_is_empty(dev_data->fifo)) {
 			uart_irq_tx_disable(dev);
@@ -117,11 +126,16 @@ static void uart_interrupt_handler(void *user_data)
 
 void power_thread(void)
 {
+        static bool on = true;
+
 	while (1) {
 		if (nrfx_power_usbstatus_get() == NRFX_POWER_USB_STATE_DISCONNECTED) {
 			NRF_POWER->SYSTEMOFF = 1;
 		}
 		k_sleep(100);
+                /* Toggle the GPIO for the nrf91 SAADC to read from */
+                gpio_pin_write(gpio_dev, SAADC_TEST_PIN, on);
+                on = !on;
 	}
 }
 
@@ -134,6 +148,9 @@ void main(void)
 	struct serial_dev *uart_0_dev_data = &devs[2];
 	struct serial_dev *uart_1_dev_data = &devs[3];
 	struct device *usb_0_dev, *usb_1_dev, *uart_0_dev, *uart_1_dev;
+
+        gpio_dev = device_get_binding(DT_GPIO_P0_DEV_NAME);
+        ret = gpio_pin_configure(gpio_dev, SAADC_TEST_PIN, GPIO_DIR_OUT);
 
 	usb_0_dev = device_get_binding(CONFIG_CDC_ACM_PORT_NAME_0);
 	if (!usb_0_dev) {
