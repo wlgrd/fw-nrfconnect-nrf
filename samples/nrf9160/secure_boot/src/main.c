@@ -338,6 +338,9 @@ static void secure_boot_config_peripherals(void)
 	/* Configure PWM0 as non-secure */
 	secure_boot_config_peripheral(
 		NRFX_PERIPHERAL_ID_GET(NRF_PWM0_S), 0);
+	/* Configure SAADC as non-secure */
+	secure_boot_config_peripheral(
+		NRFX_PERIPHERAL_ID_GET(NRF_SAADC_S), 0);
 }
 
 static void secure_boot_config(void)
