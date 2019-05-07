@@ -12,3 +12,7 @@
 	status = "ok";
 	ch0-pin = <28>;
 };
+
+&adc {
+	status ="ok";
+};
