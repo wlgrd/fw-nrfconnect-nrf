@@ -142,46 +142,14 @@ static enum adc_action adc_callback(struct device *dev,
 	printk("%s: sampling %d\n", __func__, sampling_index);
 	return ADC_ACTION_CONTINUE;
 }
-
 static int measure_voltage(void)
-{
-	int volatile ret;
-
-	const struct adc_sequence sequence = {
-		// .channels    = BIT(ADC_CHANNEL_ID0),
-		.channels = BIT(ADC_CHANNEL_ID0) | BIT(ADC_CHANNEL_ID1) |
-			    BIT(ADC_CHANNEL_ID2),
-		.buffer = m_sample_buffer,
-		.buffer_size = sizeof(m_sample_buffer),
-		.resolution = ADC_RESOLUTION,
-		// .oversampling  = ADC_OVERSAMPLING,
-	};
-
-	struct device *dev = init_adc();
-
-	prod_assert_not_null(dev, -ENODEV, "Failed to get binding");
-	k_sleep(100);
-	ret = adc_read(dev, &sequence);
-	prod_assert_equal(ret, 0, -EIO, "adc_read() failed with code %d\r\n");
-
-	for (u8_t i = 0; i < ADC_BUFFER_SIZE; i++) {
-		/* We only use 8bit adc resolution */
-		u8_t sample_value = (m_sample_buffer[i] & 0xFF);
-		float voltage = ((3600 * sample_value) / 255);
-
-		printk("Sample  %d: 0x%02x\r\n", i, sample_value);
-		printk("Voltage %d mV\r\n", (int)voltage);
-	}
-	printk("\r\n");
-	return 0;
-}
 /* Blocking call that returns when button has changed state */
 static void wait_for_new_btn_state(void)
 {
 	u32_t volatile state, newstate, timeout = 0;
 	state = dk_get_buttons();
-	newstate = state;
-	printk("Waiting for button press...");
+        newstate = state;
+	PRINT("Waiting for button press...");
 	dk_set_leds(LEDS_RED);
 	while ((state == newstate) && (timeout < button_test_timeout)) {
 		newstate = dk_get_buttons();
@@ -209,20 +177,10 @@ static int pca20035_ADXL372(void)
 {
 	dk_set_leds(LEDS_RED);
 	struct device *dev;
-	dev = device_get_binding("ADXL372");
-	prod_assert_not_null(dev, -ENODEV, "Failed to get binding");
-	dk_set_leds(DK_NO_LEDS_MSK);
-	return 0;
-}
-
-static int pca20035_ADXL362(void)
-{
-	dk_set_leds(LEDS_BLUE);
-	volatile struct device *dev;
-	dev = device_get_binding("ADXL362");
-	prod_assert_not_null(dev, -ENODEV, "Failed to get binding");
-	dk_set_leds(DK_NO_LEDS_MSK);
-	return 0;
+	dev = device_get_binding(__func__);
+	// if(dev == NULL) all_tests_succeeded = false;
+	zassert_not_null(dev, "Failed to get %s \n", __func__);
+        dk_set_leds(DK_NO_LEDS_MSK);
 }
 
 static int pca20035_BME680(void)
@@ -333,19 +291,7 @@ void main(void)
 	}
 
 	printk("Starting production test - thingy:91\r\n");
-
-#if defined(ENABLE_RTT_CMD_GET)
-	printk("Waiting for test parameters...\r\n");
-	while (!m_test_params_received) {
-		if (SEGGER_RTT_HasKey()) {
-			// Fetch the first key in the buffer
 			m_rtt_keys[m_rtt_rx_keyindex] = SEGGER_RTT_GetKey();
-
-			// Q is set as "EOL", so parse when received
-			if (m_rtt_keys[m_rtt_rx_keyindex] == 'Q') {
-				check_rtt_command(m_rtt_keys,
-						  ++m_rtt_rx_keyindex);
-				m_rtt_rx_keyindex = 0;
 				memset(m_rtt_keys, 0, sizeof(m_rtt_keys));
 			} else {
 				// Keep buffering data
@@ -353,8 +299,7 @@ void main(void)
 			}
 		}
 	}
-#endif
-
+	
 	dk_set_leds(LEDS_RED);
 	k_sleep(200);
 	dk_set_leds(DK_NO_LEDS_MSK);
@@ -382,3 +327,4 @@ void main(void)
 	}
 	dk_set_leds(LEDS_PATTERN_WAIT);
 }
+
