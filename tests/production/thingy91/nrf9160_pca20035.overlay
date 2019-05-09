@@ -1,0 +1,18 @@
+&i2c2 {
+        bh1749@38 {
+                  compatible = "rohm,bh1749";
+                  label = "BH1749";
+                  reg = <0x38>;
+                  clock-frequency = <I2C_BITRATE_FAST>;
+                  int-gpios = <&gpio0 27 0>;
+        };
+};
+
+&pwm0 {
+	status = "ok";
+	ch0-pin = <28>;
+};
+
+&adc {
+	status ="ok";
+};

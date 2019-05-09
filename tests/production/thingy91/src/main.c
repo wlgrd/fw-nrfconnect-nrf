@@ -143,6 +143,7 @@ static int pca20035_BME680(void)
 }
 static int pca20035_BH1749(void)
 {
+	measure_voltage();
 	struct device *dev;
 	dev = device_get_binding("BH1749");
 	prod_assert_not_null(dev, -ENODEV, "Failed to get binding");
@@ -204,13 +205,15 @@ static void check_rtt_command(u8_t *data, u8_t len)
 void main(void)
 {
 	int err;
+	NRF_CLOCK_S->TASKS_HFCLKSTART = 1;
+	k_sleep(5);
 	err = dk_leds_init();
 	if (err) {
-		printk("Could not initialize leds, err code: %d\n", err);
+		PRINT("Could not initialize leds, err code: %d\n", err);
 	}
 	err = dk_buttons_init(button_handler);
 	if (err) {
-		printk("Could not initialize buttons, err code: %d\n", err);
+		PRINT("Could not initialize buttons, err code: %d\n", err);
 	}
 
 	printk("Starting production test - thingy:91\r\n");
