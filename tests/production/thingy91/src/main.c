@@ -4,14 +4,19 @@
  * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
  */
 
-#include <ztest.h>
 #include <sensor.h>
 #include <nrf_cloud.h>
 #include <gpio.h>
 #include <dk_buttons_and_leds.h>
 #include <device.h>
 #include <pwm.h>
-#include <SEGGER_RTT.h>
+
+#define prod_assert_equal(a, b, msg) if(a != b) { \
+                                        printk("Assert at %s:l%d -  %s\r\n", __func__, __LINE__, msg); \
+                                        }
+#define prod_assert_not_equal(a, b, msg) if(a == b) { \
+                                        printk("Assert at %s:l%d -  %s\r\n", __func__, __LINE__, msg); \
+                                        }
 
 #define BUTTON_1		BIT(0)
 #define BUTTON_2		BIT(1)
@@ -33,6 +38,7 @@
 #define DUTY_CYCLE      (PERIOD / 4)                    //> Maximum 50% Duty cycle due to bug
 
 #if defined(ENABLE_RTT_CMD_GET)
+#include <SEGGER_RTT.h>
 static u8_t     m_rtt_keys[20];
 static u8_t     m_rtt_rx_keyindex = 0;
 bool            m_test_params_received = false;
@@ -40,7 +46,7 @@ static u8_t     msg[3];
 #endif
 static u8_t     button_test_timeout = 80;
 bool            all_tests_succeeded = true;
-
+struct          sensor_value temp;
 /* Blocking call that returns when button has changed state */
 static void wait_for_new_btn_state(void)
 {
@@ -51,7 +57,6 @@ static void wait_for_new_btn_state(void)
 	dk_set_leds(LEDS_RED);
 	while ((state == newstate) && (timeout < button_test_timeout)) {
 		newstate = dk_get_buttons();
-		// timeout++;
 		k_sleep(100);
 	}
         return;
@@ -62,7 +67,6 @@ static void ADXL372(void)
 	struct device *dev;
 	dev = device_get_binding(__func__);
 	if(dev == NULL) all_tests_succeeded = false;
-	zassert_not_null(dev, "Failed to get %s\n", __func__);
         dk_set_leds(DK_NO_LEDS_MSK);
 }
 
@@ -72,17 +76,22 @@ static void ADXL362(void)
 	struct device *dev;
 	dev = device_get_binding(__func__);
 	if(dev == NULL) all_tests_succeeded = false;
-	zassert_not_null(dev, "Failed to get %s \n", __func__);
         dk_set_leds(DK_NO_LEDS_MSK);
 }
 
 static void BME680(void)
 {
+        int err = 0;
+
         dk_set_leds(LEDS_GREEN);
 	struct device *dev;
 	dev = device_get_binding(__func__);
 	if(dev == NULL) all_tests_succeeded = false;
-	zassert_not_null(dev, "Failed to get %s \n", __func__);
+        err = sensor_sample_fetch_chan(dev, SENSOR_CHAN_AMBIENT_TEMP);
+        prod_assert_equal(err, 0, "Failed to fetch temperature");
+        err = sensor_channel_get(dev, SENSOR_CHAN_AMBIENT_TEMP, &temp);
+        prod_assert_equal(err, 0, "Failed to get temperature");
+        printk("BME680_ Temperature: %d\r\n", temp.val1);
         dk_set_leds(DK_NO_LEDS_MSK);
 }
 static void BH1749(void)
@@ -90,24 +99,22 @@ static void BH1749(void)
 	struct device *dev;
 	dev = device_get_binding(__func__);
 	if(dev == NULL) all_tests_succeeded = false;
-	zassert_not_null(dev, "Failed to get %s \n", __func__);
 }
 
 static void test_button(void)
 {
 	u32_t volatile state, newstate, timeout = 0, button_test_timeout = 200000;
-	PRINT("[ACTION]: Please press the button ...\n");
+	printk("[ACTION]: Please press the button ...\n");
 	state = dk_get_buttons();
-        newstate = state;	
+        newstate = state;
 	dk_set_leds(LEDS_RED);
 	while ((state == newstate) && (timeout < button_test_timeout)) {
 		newstate = dk_get_buttons();
 		timeout++;
 		k_sleep(1);
 	}
-	PRINT("timeout: %d \n", timeout);
+	printk("timeout: %d \n", timeout);
         all_tests_succeeded = ( (timeout != button_test_timeout) ? all_tests_succeeded : false);
-	zassert_not_equal(timeout, button_test_timeout, "Button test timed out\n");
 	dk_set_leds(DK_NO_LEDS_MSK);
 }
 
@@ -120,13 +127,11 @@ static void test_buzzer(void)
         pwm_dev = device_get_binding(DT_NORDIC_NRF_PWM_PWM_0_LABEL);
         printk("Turning buzzer ON\n");
         if (!pwm_dev) {
-                zassert_unreachable("Cannot bind pwm device");
 		all_tests_succeeded = false;
         }
         err_code = pwm_pin_set_usec(pwm_dev, BUZZER_PIN,
                                 period, duty_cycle);
         if (err_code) {
-                zassert_unreachable("Unable to turn buzzer ON\n");
 		all_tests_succeeded = false;
                 return;
         }
@@ -135,7 +140,6 @@ static void test_buzzer(void)
         err_code = pwm_pin_set_usec(pwm_dev, BUZZER_PIN,
                                 period, 0);
         if (err_code) {
-                zassert_unreachable("Unable to turn buzzer OFF\n");
 		all_tests_succeeded = false;
                 return;
         }
@@ -155,7 +159,7 @@ static void check_rtt_command(u8_t *data, u8_t len)
 }
 #endif
 
-void test_main(void)
+void main(void)
 {
 	int err;
 	err = dk_leds_init();
@@ -167,10 +171,10 @@ void test_main(void)
 		printk("Could not initialize buttons, err code: %d\n", err);
 	}
 
-	PRINT("Starting production test - thingy:91\r\n");
+	printk("Starting production test - thingy:91\r\n");
 
         #if defined(ENABLE_RTT_CMD_GET)
-                PRINT("Waiting for test parameters...\r\n");
+                printk("Waiting for test parameters...\r\n");
                 while(!m_test_params_received)
                 {
                         if(SEGGER_RTT_HasKey())
@@ -203,17 +207,19 @@ void test_main(void)
 	k_sleep(1000);
 	dk_set_leds(DK_NO_LEDS_MSK);
 
-	PRINT("Got test parameters!\r\n");
-	ztest_test_suite(thingy91_production,	/* Name of test suite */
-		ztest_unit_test(test_button),
-		ztest_unit_test(ADXL372),      	/* Add tests... */
-		ztest_unit_test(BME680),
-		ztest_unit_test(ADXL362),
-		ztest_unit_test(BH1749)
-	);
+	printk("Got test parameters!\r\n");
+	// ztest_test_suite(thingy91_production,	/* Name of test suite */
+	// 	ztest_unit_test(test_button),
+	// 	//ztest_unit_test(ADXL372),      	/* Add tests... */
+	// 	ztest_unit_test(BME680),
+	// 	//ztest_unit_test(ADXL362),
+	// 	//ztest_unit_test(test_buzzer),
+	// 	ztest_unit_test(BH1749)
+	// );
 	while(1)
 	{
-		ztest_run_test_suite(thingy91_production);
+		//ztest_run_test_suite(thingy91_production);
+                BME680();
 		k_sleep(100);
 		// Stop execution if test failed.
 		if(!all_tests_succeeded) break;
