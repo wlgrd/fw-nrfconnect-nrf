@@ -3,13 +3,36 @@
  *
  * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
  */
-
+#include <string.h> // memset
 #include <sensor.h>
 #include <nrf_cloud.h>
 #include <gpio.h>
 #include <dk_buttons_and_leds.h>
 #include <device.h>
 #include <pwm.h>
+#include <adc.h>
+//#include <SEGGER_RTT.h>
+
+#if defined(CONFIG_BOARD_NRF9160_PCA20035NS) ||                                \
+	defined(CONFIG_BOARD_NRF9160_PCA20035)
+#include <hal/nrf_saadc.h>
+#define ADC_DEVICE_NAME "ADC_0"
+#define ADC_RESOLUTION 8
+#define ADC_GAIN ADC_GAIN_1_6
+#define ADC_REFERENCE ADC_REF_INTERNAL
+#define ADC_ACQUISITION_TIME ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 5)
+#define ADC_CHANNEL_ID0 0
+#define ADC_CHANNEL_ID1 1
+#define ADC_CHANNEL_ID2 2
+#define ADC_CHANNEL_INPUT0 NRF_SAADC_INPUT_AIN5
+#define ADC_CHANNEL_INPUT1 NRF_SAADC_INPUT_AIN6
+#define ADC_CHANNEL_INPUT2 NRF_SAADC_INPUT_AIN7
+#define ADC_OVERSAMPLING 2 /* 2^ADC_OVERSAMPLING samples are averaged */
+#define ADC_BUFFER_SIZE 3
+
+#else
+#error "Unsupported board."
+#endif
 
 #define prod_assert_equal(a, b, err, msg)                                      \
 	if (a != b) {                                                          \
@@ -56,10 +79,102 @@ static u8_t m_rtt_keys[20];
 static u8_t m_rtt_rx_keyindex = 0;
 bool m_test_params_received = false;
 static u8_t msg[3];
-#endif
+#endif // ENABLE_RTT_CMD_GET
+
 static u8_t button_test_timeout = 80;
 bool all_tests_succeeded = true;
 struct sensor_value temp;
+
+static u16_t m_sample_buffer[ADC_BUFFER_SIZE];
+
+static const struct adc_channel_cfg m_channel_cfg0 = {
+	.gain = ADC_GAIN,
+	.reference = ADC_REFERENCE,
+	.acquisition_time = ADC_ACQUISITION_TIME,
+	.channel_id = ADC_CHANNEL_ID0,
+	.input_positive = ADC_CHANNEL_INPUT0,
+	.input_negative = ADC_CHANNEL_INPUT2,
+};
+static const struct adc_channel_cfg m_channel_cfg1 = {
+	.gain = ADC_GAIN,
+	.reference = ADC_REFERENCE,
+	.acquisition_time = ADC_ACQUISITION_TIME,
+	.channel_id = ADC_CHANNEL_ID1,
+	.input_positive = ADC_CHANNEL_INPUT1,
+};
+static const struct adc_channel_cfg m_channel_cfg2 = {
+	.gain = ADC_GAIN,
+	.reference = ADC_REFERENCE,
+	.acquisition_time = ADC_ACQUISITION_TIME,
+	.channel_id = ADC_CHANNEL_ID2,
+	.input_positive = ADC_CHANNEL_INPUT2,
+};
+
+static struct device *init_adc(void)
+{
+	int ret;
+	struct device *adc_dev = device_get_binding("ADC_0");
+
+	prod_assert_not_null(adc_dev, -ENODEV, "Cannot get ADC device");
+
+	ret = adc_channel_setup(adc_dev, &m_channel_cfg0);
+	prod_assert_equal(
+		ret, 0, -EIO,
+		"Setting up of the first channel failed with code %d");
+	ret = adc_channel_setup(adc_dev, &m_channel_cfg1);
+	prod_assert_equal(
+		ret, 0, -EIO,
+		"Setting up of the second channel failed with code %d");
+	ret = adc_channel_setup(adc_dev, &m_channel_cfg2);
+	prod_assert_equal(
+		ret, 0, -EIO,
+		"Setting up of the third channel failed with code %d");
+
+	(void)memset(m_sample_buffer, 0, sizeof(m_sample_buffer));
+
+	return adc_dev;
+}
+
+static enum adc_action adc_callback(struct device *dev,
+				    const struct adc_sequence *sequence,
+				    u16_t sampling_index)
+{
+	printk("%s: sampling %d\n", __func__, sampling_index);
+	return ADC_ACTION_CONTINUE;
+}
+
+static int measure_voltage(void)
+{
+	int volatile ret;
+
+	const struct adc_sequence sequence = {
+		// .channels    = BIT(ADC_CHANNEL_ID0),
+		.channels = BIT(ADC_CHANNEL_ID0) | BIT(ADC_CHANNEL_ID1) |
+			    BIT(ADC_CHANNEL_ID2),
+		.buffer = m_sample_buffer,
+		.buffer_size = sizeof(m_sample_buffer),
+		.resolution = ADC_RESOLUTION,
+		// .oversampling  = ADC_OVERSAMPLING,
+	};
+
+	struct device *dev = init_adc();
+
+	prod_assert_not_null(dev, -ENODEV, "Failed to get binding");
+	k_sleep(100);
+	ret = adc_read(dev, &sequence);
+	prod_assert_equal(ret, 0, -EIO, "adc_read() failed with code %d\r\n");
+
+	for (u8_t i = 0; i < ADC_BUFFER_SIZE; i++) {
+		/* We only use 8bit adc resolution */
+		u8_t sample_value = (m_sample_buffer[i] & 0xFF);
+		float voltage = ((3600 * sample_value) / 255);
+
+		printk("Sample  %d: 0x%02x\r\n", i, sample_value);
+		printk("Voltage %d mV\r\n", (int)voltage);
+	}
+	printk("\r\n");
+	return 0;
+}
 /* Blocking call that returns when button has changed state */
 static void wait_for_new_btn_state(void)
 {
@@ -121,19 +236,22 @@ static int pca20035_BME680(void)
 	prod_assert_not_null(dev, -ENODEV, "Failed to get binding");
 	err = sensor_sample_fetch_chan(dev, SENSOR_CHAN_ALL);
 	prod_assert_equal(err, 0, -EIO, "Failed to fetch sensor data");
-
+	k_sleep(10);
 	err = sensor_channel_get(dev, SENSOR_CHAN_AMBIENT_TEMP, &temp);
 	prod_assert_equal(err, 0, -EIO, "Failed to get temperature");
 	printk("BME680 temperature: %d.%d\r\n", temp.val1, temp.val2);
 
+	k_sleep(10);
 	err = sensor_channel_get(dev, SENSOR_CHAN_PRESS, &temp);
 	prod_assert_equal(err, 0, -EIO, "Failed to get pressure");
 	printk("BME680 pressure: %d.%d kPa\r\n", temp.val1, temp.val2);
 
+	k_sleep(10);
 	err = sensor_channel_get(dev, SENSOR_CHAN_HUMIDITY, &temp);
 	prod_assert_equal(err, 0, -EIO, "Failed to get humidity");
 	printk("BME680 humidity: %d.%d %%RH\r\n", temp.val1, temp.val2);
 
+	k_sleep(10);
 	err = sensor_channel_get(dev, SENSOR_CHAN_GAS_RES, &temp);
 	prod_assert_equal(err, 0, -EIO, "Failed to get gas");
 	printk("BME680 gas resistance: %d ohms\r\n", temp.val1);
@@ -143,7 +261,6 @@ static int pca20035_BME680(void)
 }
 static int pca20035_BH1749(void)
 {
-	measure_voltage();
 	struct device *dev;
 	dev = device_get_binding("BH1749");
 	prod_assert_not_null(dev, -ENODEV, "Failed to get binding");
@@ -190,6 +307,7 @@ static int pca20035_test_buzzer(void)
 
 static int button_handler(u32_t buttons, u32_t has_changed)
 {
+	return;
 }
 
 #if defined(ENABLE_RTT_CMD_GET)
@@ -205,15 +323,13 @@ static void check_rtt_command(u8_t *data, u8_t len)
 void main(void)
 {
 	int err;
-	NRF_CLOCK_S->TASKS_HFCLKSTART = 1;
-	k_sleep(5);
 	err = dk_leds_init();
 	if (err) {
-		PRINT("Could not initialize leds, err code: %d\n", err);
+		printk("Could not initialize leds, err code: %d\n", err);
 	}
-	err = dk_buttons_init(button_handler);
+	err = dk_buttons_init(&button_handler);
 	if (err) {
-		PRINT("Could not initialize buttons, err code: %d\n", err);
+		printk("Could not initialize buttons, err code: %d\n", err);
 	}
 
 	printk("Starting production test - thingy:91\r\n");
@@ -248,21 +364,15 @@ void main(void)
 	dk_set_leds(LEDS_BLUE);
 	k_sleep(200);
 	dk_set_leds(DK_NO_LEDS_MSK);
-	// for(u8_t i = 0; i < 5; i++)
-	// {
-	//         dk_set_leds(LEDS_PATTERN_WAIT);
-	//         k_sleep(1);
-	//         dk_set_leds(DK_NO_LEDS_MSK);
-	//         k_sleep(200);
-	// };
 
 	while (1) {
+		run_test(&pca20035_BH1749, "pca20035_BH1749");
 		run_test(&pca20035_ADXL372, "pca20035_ADXL372");
 		run_test(&pca20035_ADXL362, "pca20035_ADXL362");
 		run_test(&pca20035_BME680, "pca20035_BME680");
-		run_test(&pca20035_BH1749, "pca20035_BH1749");
 		run_test(&pca20035_test_button, "pca20035_button");
 		run_test(&pca20035_test_buzzer, "pca20035_buzzer");
+		run_test(&measure_voltage, "measure_voltage");
 		k_sleep(100);
 		// Stop execution if test failed.
 		all_tests_succeeded ? printk("\r\nTEST SUITE SUCCESS!\r\n") :
