@@ -34,25 +34,29 @@
 #error "Unsupported board."
 #endif
 
-#define prod_assert_equal(a, b, err, msg)                                      \
-	if (a != b) {                                                          \
+#define prod_assert_equal(a, b, err, msg)                              \
+	if (a != b) {                                                      \
 		printk("Error at %s, line %d -  %s\r\n", __func__, __LINE__,   \
 		       msg);                                                   \
 		return err;                                                    \
 	}
 
-#define prod_assert_not_equal(a, b, err, msg)                                  \
-	if (a == b) {                                                          \
+#define prod_assert_not_equal(a, b, err, msg)                          \
+	if (a == b) {                                                      \
 		printk("Error at %s, line %d -  %s\r\n", __func__, __LINE__,   \
 		       msg);                                                   \
 		return err;                                                    \
 	}
-#define prod_assert_not_null(a, err, msg)                                      \
-	if (a == NULL) {                                                       \
+#define prod_assert_not_null(a, err, msg)                              \
+	if (a == NULL) {                                                   \
 		printk("Error at %s, line %d -  %s\r\n", __func__, __LINE__,   \
 		       msg);                                                   \
 		return err;                                                    \
 	}
+#define prod_assert_unreachable(msg)                                   \
+		printk("Error at %s, line %d -  %s\r\n", __func__, __LINE__,   \
+		       msg);                                                   \
+		return -1;                                                     \
 
 #define BUTTON_1 BIT(0)
 #define BUTTON_2 BIT(1)
@@ -72,6 +76,10 @@
 #define OSC_FREQ_US ((1000000UL / OSC_FREQ_HZ))
 #define PERIOD (OSC_FREQ_US / 2) //> Need to set it half due to bug
 #define DUTY_CYCLE (PERIOD / 4) //> Maximum 50% Duty cycle due to bug
+
+#define SENSE_LED_R		0
+#define SENSE_LED_G		1
+#define SENSE_LED_B		2
 
 #if defined(ENABLE_RTT_CMD_GET)
 #include <SEGGER_RTT.h>
@@ -194,33 +202,62 @@ static void run_test(int (*test)(void), char *testname)
 {
 	int ret;
 	printk("============================\r\n");
-	printk("Starting test: %s\r\n", testname);
+	printk("Starting test: %s\r\n\r\n", testname);
 	ret = test();
 	if (ret != 0) {
 		all_tests_succeeded = false;
-		printk("Failed: %s\r\n", testname);
+		printk("\r\nFailed: %s\r\n", testname);
 		return;
 	}
 	k_sleep(200);
-	printk("Succeeded: %s\r\n", testname);
+	printk("\r\nSucceeded: %s\r\n", testname);
 }
 
 static int pca20035_ADXL372(void)
 {
+	int err = 0;
 	dk_set_leds(LEDS_RED);
 	struct device *dev;
 	dev = device_get_binding("ADXL372");
 	prod_assert_not_null(dev, -ENODEV, "Failed to get binding");
+	err = sensor_sample_fetch_chan(dev, SENSOR_CHAN_ALL);
+	prod_assert_equal(err, 0, -EIO, "Failed to fetch sensor data");
+	k_sleep(10);
+	err = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_X, &temp);
+	prod_assert_equal(err, 0, -EIO, "Failed to accel x");
+	printk("ADXL372 X: %d.%d\r\n", temp.val1, temp.val2);
+	// TODO: Fix, as float print hangs rtt for some reason.
+	// printf("ADXL372 X: %.2f\r\n", sensor_value_to_double(&temp));
+	// k_sleep(10);
+	err = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_Y, &temp);
+	prod_assert_equal(err, 0, -EIO, "Failed to accel y");
+	printk("ADXL372 Y: %d.%d\r\n", temp.val1, temp.val2);
+	err = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_Z, &temp);
+	prod_assert_equal(err, 0, -EIO, "Failed to accel z");
+	printk("ADXL372 Z: %d.%d\r\n", temp.val1, temp.val2);
 	dk_set_leds(DK_NO_LEDS_MSK);
 	return 0;
 }
 
 static int pca20035_ADXL362(void)
 {
+	int err = 0;
 	dk_set_leds(LEDS_BLUE);
 	volatile struct device *dev;
 	dev = device_get_binding("ADXL362");
 	prod_assert_not_null(dev, -ENODEV, "Failed to get binding");
+	err = sensor_sample_fetch_chan(dev, SENSOR_CHAN_ALL);
+	prod_assert_equal(err, 0, -EIO, "Failed to fetch sensor data");
+	k_sleep(10);
+	err = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_X, &temp);
+	prod_assert_equal(err, 0, -EIO, "Failed to accel x");
+	printk("ADXL362 X: %d.%d\r\n", temp.val1, temp.val2);
+	err = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_Y, &temp);
+	prod_assert_equal(err, 0, -EIO, "Failed to accel y");
+	printk("ADXL362 Y: %d.%d\r\n", temp.val1, temp.val2);
+	err = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_Z, &temp);
+	prod_assert_equal(err, 0, -EIO, "Failed to accel z");
+	printk("ADXL362 Z: %d.%d\r\n", temp.val1, temp.val2);
 	dk_set_leds(DK_NO_LEDS_MSK);
 	return 0;
 }
@@ -261,9 +298,76 @@ static int pca20035_BME680(void)
 }
 static int pca20035_BH1749(void)
 {
+	int err = 0;
 	struct device *dev;
+	struct device *gpio;
+	static uint8_t rgb[3] = {0, 0, 0};
+
+	gpio = device_get_binding(DT_GPIO_P0_DEV_NAME);
+	prod_assert_not_null(gpio, -ENODEV, "Failed to get binding to gpio");
+	gpio_pin_configure(gpio, SENSE_LED_R, GPIO_DIR_OUT);
+	gpio_pin_configure(gpio, SENSE_LED_G, GPIO_DIR_OUT);
+	gpio_pin_configure(gpio, SENSE_LED_B, GPIO_DIR_OUT);
+
 	dev = device_get_binding("BH1749");
 	prod_assert_not_null(dev, -ENODEV, "Failed to get binding");
+	gpio_pin_write(gpio, SENSE_LED_R, 1);
+	gpio_pin_write(gpio, SENSE_LED_G, 0);
+	gpio_pin_write(gpio, SENSE_LED_B, 0);
+
+	for (u8_t i = 0; i < 3; i++)
+	{
+		k_sleep(300);
+		err = sensor_sample_fetch_chan(dev, SENSOR_CHAN_ALL);
+		prod_assert_equal(err, 0, -EIO, "Failed to fetch sensor data");
+		k_sleep(200);
+		err = sensor_channel_get(dev, SENSOR_CHAN_RED, &temp);
+		prod_assert_equal(err, 0, -EIO, "Failed to get red");
+		rgb[0] = temp.val1;
+		err = sensor_channel_get(dev, SENSOR_CHAN_GREEN, &temp);
+		prod_assert_equal(err, 0, -EIO, "Failed to get green");
+		rgb[1] = temp.val1;
+		err = sensor_channel_get(dev, SENSOR_CHAN_BLUE, &temp);
+		prod_assert_equal(err, 0, -EIO, "Failed to get blue");
+		rgb[2] = temp.val1;
+		k_sleep(300);
+
+		switch (i) {
+			case 0:
+				printk("BH1749 red: %d (Sum of others: %d)\r\n", rgb[0],
+						(rgb[1] + rgb[2]));
+				if(rgb[0] < (rgb[1] + rgb[2])) {
+					prod_assert_unreachable("RED");
+				}
+					/* Set SENSE LEDs for next iteration */ 
+					gpio_pin_write(gpio, SENSE_LED_R, 0);
+					gpio_pin_write(gpio, SENSE_LED_G, 1);
+					gpio_pin_write(gpio, SENSE_LED_B, 0);
+				break;
+			case 1:
+				printk("BH1749 green: %d (Sum of others: %d)\r\n", rgb[1],
+						(rgb[0] + rgb[2]));
+				if(rgb[1] < (rgb[0] + rgb[2])) {
+					prod_assert_unreachable("GREEN");
+				}
+					/* Set SENSE LEDs for next iteration */ 
+					gpio_pin_write(gpio, SENSE_LED_R, 0);
+					gpio_pin_write(gpio, SENSE_LED_G, 0);
+					gpio_pin_write(gpio, SENSE_LED_B, 1);
+				break;
+			case 2:
+				printk("BH1749 blue: %d (Sum of others: %d)\r\n", rgb[2],
+						(rgb[1] + rgb[0]));
+				if(rgb[2] < (rgb[1]/2 + rgb[0])-20) {
+					prod_assert_unreachable("BLUE");
+				}
+				break;
+			default:
+				break;
+		}
+
+	}
+
 	return 0;
 }
 
@@ -364,7 +468,14 @@ void main(void)
 	dk_set_leds(LEDS_BLUE);
 	k_sleep(200);
 	dk_set_leds(DK_NO_LEDS_MSK);
-
+	printk(".\r\n");
+	printk(".\r\n");
+	printk(".\r\n");
+	printk(".\r\n");
+	/* This delay is added to improve rtt buffer loss on the host side.
+         * Might be that we can improve this with other debuggers...
+         */
+	k_sleep(4000);
 	while (1) {
 		run_test(&pca20035_BH1749, "pca20035_BH1749");
 		run_test(&pca20035_ADXL372, "pca20035_ADXL372");
@@ -373,7 +484,7 @@ void main(void)
 		run_test(&pca20035_test_button, "pca20035_button");
 		run_test(&pca20035_test_buzzer, "pca20035_buzzer");
 		run_test(&measure_voltage, "measure_voltage");
-		k_sleep(100);
+		k_sleep(50);
 		// Stop execution if test failed.
 		all_tests_succeeded ? printk("\r\nTEST SUITE SUCCESS!\r\n") :
 				      printk("\r\nTEST SUITE FAILED!\r\n");
