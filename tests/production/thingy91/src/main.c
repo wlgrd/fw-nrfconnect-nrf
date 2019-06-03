@@ -11,9 +11,10 @@
 #include <device.h>
 #include <pwm.h>
 #include <adc.h>
-//#include <SEGGER_RTT.h>
+#include <nrf.h>
+// #include <SEGGER_RTT.h>
 
-#if defined(CONFIG_BOARD_NRF9160_PCA20035NS) ||                                \
+#if defined(CONFIG_BOARD_NRF9160_PCA20035NS) ||	\
 	defined(CONFIG_BOARD_NRF9160_PCA20035)
 #include <hal/nrf_saadc.h>
 #define ADC_DEVICE_NAME "ADC_0"
@@ -34,29 +35,29 @@
 #error "Unsupported board."
 #endif
 
-#define prod_assert_equal(a, b, err, msg)                              \
-	if (a != b) {                                                      \
-		printk("Error at %s, line %d -  %s\r\n", __func__, __LINE__,   \
-		       msg);                                                   \
-		return err;                                                    \
+#define prod_assert_equal(a, b, err, msg)				     \
+	if (a != b) {							     \
+		printk("Error at %s, line %d -  %s\r\n", __func__, __LINE__, \
+		       msg);						     \
+		return err;						     \
 	}
 
-#define prod_assert_not_equal(a, b, err, msg)                          \
-	if (a == b) {                                                      \
-		printk("Error at %s, line %d -  %s\r\n", __func__, __LINE__,   \
-		       msg);                                                   \
-		return err;                                                    \
+#define prod_assert_not_equal(a, b, err, msg)				     \
+	if (a == b) {							     \
+		printk("Error at %s, line %d -  %s\r\n", __func__, __LINE__, \
+		       msg);						     \
+		return err;						     \
 	}
-#define prod_assert_not_null(a, err, msg)                              \
-	if (a == NULL) {                                                   \
-		printk("Error at %s, line %d -  %s\r\n", __func__, __LINE__,   \
-		       msg);                                                   \
-		return err;                                                    \
+#define prod_assert_not_null(a, err, msg)				     \
+	if (a == NULL) {						     \
+		printk("Error at %s, line %d -  %s\r\n", __func__, __LINE__, \
+		       msg);						     \
+		return err;						     \
 	}
-#define prod_assert_unreachable(msg)                                   \
-		printk("Error at %s, line %d -  %s\r\n", __func__, __LINE__,   \
-		       msg);                                                   \
-		return -1;                                                     \
+#define prod_assert_unreachable(msg)				     \
+	printk("Error at %s, line %d -  %s\r\n", __func__, __LINE__, \
+	       msg);						     \
+	return -1;						     \
 
 #define BUTTON_1 BIT(0)
 #define BUTTON_2 BIT(1)
@@ -74,12 +75,12 @@
 #define PWM_CHANNEL 0
 #define OSC_FREQ_HZ 2700
 #define OSC_FREQ_US ((1000000UL / OSC_FREQ_HZ))
-#define PERIOD (OSC_FREQ_US / 2) //> Need to set it half due to bug
-#define DUTY_CYCLE (PERIOD / 4) //> Maximum 50% Duty cycle due to bug
+#define PERIOD (OSC_FREQ_US / 2)        // > Need to set it half due to bug
+#define DUTY_CYCLE (PERIOD / 4)         // > Maximum 50% Duty cycle due to bug
 
-#define SENSE_LED_R		0
-#define SENSE_LED_G		1
-#define SENSE_LED_B		2
+#define SENSE_LED_R             0
+#define SENSE_LED_G             1
+#define SENSE_LED_B             2
 
 #if defined(ENABLE_RTT_CMD_GET)
 #include <SEGGER_RTT.h>
@@ -117,6 +118,42 @@ static const struct adc_channel_cfg m_channel_cfg2 = {
 	.channel_id = ADC_CHANNEL_ID2,
 	.input_positive = ADC_CHANNEL_INPUT2,
 };
+
+/* Semaphore for bh1749 trigger wait */
+K_SEM_DEFINE(sem, 0, 1);
+
+static void bh1749_trigger_handler(struct device *dev, struct sensor_trigger *trigger)
+{
+	ARG_UNUSED(dev);
+	switch (trigger->type) {
+	case SENSOR_TRIG_THRESHOLD:
+		printk("Threshold trigger\r\n");
+		break;
+	case SENSOR_TRIG_DATA_READY:
+		printk("Data ready trigger\r\n");
+		break;
+	default:
+		printk("Unknown trigger event %d\r\n", trigger->type);
+		break;
+	}
+	k_sem_give(&sem);
+}
+
+static int bh1479_set_attribute(struct device *dev, enum sensor_channel chan,
+				enum sensor_attribute attr, int value)
+{
+	int ret;
+	struct sensor_value sensor_val;
+
+	sensor_val.val1 = (value);
+
+	ret = sensor_attr_set(dev, chan, attr, &sensor_val);
+	if (ret) {
+		printf("sensor_attr_set failed ret %d\n", ret);
+	}
+
+	return ret;
+}
 
 static struct device *init_adc(void)
 {
@@ -187,6 +224,7 @@ static int measure_voltage(void)
 static void wait_for_new_btn_state(void)
 {
 	u32_t volatile state, newstate, timeout = 0;
+
 	state = dk_get_buttons();
 	newstate = state;
 	printk("Waiting for button press...");
@@ -201,8 +239,10 @@ static void wait_for_new_btn_state(void)
 static void run_test(int (*test)(void), char *testname)
 {
 	int ret;
+
 	printk("============================\r\n");
 	printk("Starting test: %s\r\n\r\n", testname);
+	k_sleep(200);
 	ret = test();
 	if (ret != 0) {
 		all_tests_succeeded = false;
@@ -216,6 +256,7 @@ static void run_test(int (*test)(void), char *testname)
 static int pca20035_ADXL372(void)
 {
 	int err = 0;
+
 	dk_set_leds(LEDS_RED);
 	struct device *dev;
 	dev = device_get_binding("ADXL372");
@@ -242,6 +283,7 @@ static int pca20035_ADXL372(void)
 static int pca20035_ADXL362(void)
 {
 	int err = 0;
+
 	dk_set_leds(LEDS_BLUE);
 	volatile struct device *dev;
 	dev = device_get_binding("ADXL362");
@@ -296,12 +338,18 @@ static int pca20035_BME680(void)
 	dk_set_leds(DK_NO_LEDS_MSK);
 	return 0;
 }
+
 static int pca20035_BH1749(void)
 {
 	int err = 0;
 	struct device *dev;
 	struct device *gpio;
-	static uint8_t rgb[3] = {0, 0, 0};
+	static uint8_t rgb[3] = { 0, 0, 0 };
+
+	struct sensor_trigger sensor_trig_conf = {
+		.type = SENSOR_TRIG_DATA_READY,
+		.chan = SENSOR_CHAN_RED,
+	};
 
 	gpio = device_get_binding(DT_GPIO_P0_DEV_NAME);
 	prod_assert_not_null(gpio, -ENODEV, "Failed to get binding to gpio");
@@ -315,8 +363,9 @@ static int pca20035_BH1749(void)
 	gpio_pin_write(gpio, SENSE_LED_G, 0);
 	gpio_pin_write(gpio, SENSE_LED_B, 0);
 
-	for (u8_t i = 0; i < 3; i++)
-	{
+	sensor_trigger_set(dev, &sensor_trig_conf, bh1749_trigger_handler);
+
+	for (u8_t i = 0; i < 3; i++) {
 		k_sleep(300);
 		err = sensor_sample_fetch_chan(dev, SENSOR_CHAN_ALL);
 		prod_assert_equal(err, 0, -EIO, "Failed to fetch sensor data");
@@ -333,37 +382,37 @@ static int pca20035_BH1749(void)
 		k_sleep(300);
 
 		switch (i) {
-			case 0:
-				printk("BH1749 red: %d (Sum of others: %d)\r\n", rgb[0],
-						(rgb[1] + rgb[2]));
-				if(rgb[0] < (rgb[1] + rgb[2])) {
-					prod_assert_unreachable("RED");
-				}
-					/* Set SENSE LEDs for next iteration */ 
-					gpio_pin_write(gpio, SENSE_LED_R, 0);
-					gpio_pin_write(gpio, SENSE_LED_G, 1);
-					gpio_pin_write(gpio, SENSE_LED_B, 0);
-				break;
-			case 1:
-				printk("BH1749 green: %d (Sum of others: %d)\r\n", rgb[1],
-						(rgb[0] + rgb[2]));
-				if(rgb[1] < (rgb[0] + rgb[2])) {
-					prod_assert_unreachable("GREEN");
-				}
-					/* Set SENSE LEDs for next iteration */ 
-					gpio_pin_write(gpio, SENSE_LED_R, 0);
-					gpio_pin_write(gpio, SENSE_LED_G, 0);
-					gpio_pin_write(gpio, SENSE_LED_B, 1);
-				break;
-			case 2:
-				printk("BH1749 blue: %d (Sum of others: %d)\r\n", rgb[2],
-						(rgb[1] + rgb[0]));
-				if(rgb[2] < (rgb[1]/2 + rgb[0])-20) {
-					prod_assert_unreachable("BLUE");
-				}
-				break;
-			default:
-				break;
+		case 0:
+			printk("BH1749 red: %d (Sum of others: %d)\r\n", rgb[0],
+			       (rgb[1] + rgb[2]));
+			if (rgb[0] < (rgb[1] + rgb[2])) {
+				prod_assert_unreachable("RED failed");
+			}
+			/* Set SENSE LEDs for next iteration */
+			gpio_pin_write(gpio, SENSE_LED_R, 0);
+			gpio_pin_write(gpio, SENSE_LED_G, 1);
+			gpio_pin_write(gpio, SENSE_LED_B, 0);
+			break;
+		case 1:
+			printk("BH1749 green: %d (Sum of others: %d)\r\n", rgb[1],
+			       (rgb[0] + rgb[2]));
+			if (rgb[1] < (rgb[0] + rgb[2])) {
+				prod_assert_unreachable("GREEN failed");
+			}
+			/* Set SENSE LEDs for next iteration */
+			gpio_pin_write(gpio, SENSE_LED_R, 0);
+			gpio_pin_write(gpio, SENSE_LED_G, 0);
+			gpio_pin_write(gpio, SENSE_LED_B, 1);
+			break;
+		case 2:
+			printk("BH1749 blue: %d (Sum of others: %d)\r\n", rgb[2],
+			       (rgb[1] + rgb[0]));
+			if (rgb[2] < (rgb[1] / 2 + rgb[0])) {
+				prod_assert_unreachable("BLUE failed");
+			}
+			break;
+		default:
+			break;
 		}
 
 	}
@@ -374,7 +423,8 @@ static int pca20035_BH1749(void)
 static int pca20035_test_button(void)
 {
 	u32_t volatile state, newstate, timeout = 0,
-					button_test_timeout = 200000;
+		       button_test_timeout = 200000;
+
 	printk("[ACTION]: Please press the button ...\n");
 	state = dk_get_buttons();
 	newstate = state;
@@ -397,6 +447,7 @@ static int pca20035_test_buzzer(void)
 	static struct device *dev;
 	static u32_t period = PERIOD;
 	static u32_t duty_cycle = DUTY_CYCLE;
+
 	dev = device_get_binding(DT_NORDIC_NRF_PWM_PWM_0_LABEL);
 	prod_assert_not_null(dev, -ENODEV, "Failed to get binding");
 	printk("Turning buzzer ON\n");
@@ -427,6 +478,7 @@ static void check_rtt_command(u8_t *data, u8_t len)
 void main(void)
 {
 	int err;
+
 	err = dk_leds_init();
 	if (err) {
 		printk("Could not initialize leds, err code: %d\n", err);
@@ -473,8 +525,8 @@ void main(void)
 	printk(".\r\n");
 	printk(".\r\n");
 	/* This delay is added to improve rtt buffer loss on the host side.
-         * Might be that we can improve this with other debuggers...
-         */
+	 * Might be that we can improve this with other debuggers...
+	 */
 	k_sleep(4000);
 	while (1) {
 		run_test(&pca20035_BH1749, "pca20035_BH1749");
@@ -484,12 +536,13 @@ void main(void)
 		run_test(&pca20035_test_button, "pca20035_button");
 		run_test(&pca20035_test_buzzer, "pca20035_buzzer");
 		run_test(&measure_voltage, "measure_voltage");
-		k_sleep(50);
+		k_sleep(500);
 		// Stop execution if test failed.
 		all_tests_succeeded ? printk("\r\nTEST SUITE SUCCESS!\r\n") :
-				      printk("\r\nTEST SUITE FAILED!\r\n");
-		if (!all_tests_succeeded)
+		printk("\r\nTEST SUITE FAILED!\r\n");
+		if (!all_tests_succeeded) {
 			break;
+		}
 	}
 	dk_set_leds(LEDS_PATTERN_WAIT);
 }
