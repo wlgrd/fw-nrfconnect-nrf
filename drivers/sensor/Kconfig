@@ -11,6 +11,7 @@ menuconfig SENSOR
 
 if SENSOR
 
+rsource "bh1749/Kconfig"
 rsource "sensor_sim/Kconfig"
 
 endif # SENSOR
