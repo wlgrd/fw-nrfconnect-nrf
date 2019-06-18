@@ -14,6 +14,10 @@
 #include <nrf.h>
 // #include <SEGGER_RTT.h>
 
+#define THRESHOLD_UPPER                 50
+#define THRESHOLD_LOWER                 0
+#define TRIGGER_ON_DATA_READY           0
+
 #if defined(CONFIG_BOARD_NRF9160_PCA20035NS) ||	\
 	defined(CONFIG_BOARD_NRF9160_PCA20035)
 #include <hal/nrf_saadc.h>
@@ -95,7 +99,7 @@ static int bh1479_set_attribute(struct device *dev, enum sensor_channel chan,
 #define OSC_FREQ_HZ 2700
 #define OSC_FREQ_US ((1000000UL / OSC_FREQ_HZ))
 #define PERIOD (OSC_FREQ_US / 2)        // > Need to set it half due to bug
-#define DUTY_CYCLE (PERIOD / 4)         // > Maximum 50% Duty cycle due to bug
+#define DUTY_CYCLE (PERIOD / 2)         // > Maximum 50% Duty cycle due to bug
 
 #define SENSE_LED_R             0
 #define SENSE_LED_G             1
@@ -322,31 +326,24 @@ static int pca20035_BH1749(void)
 	struct device *dev;
 	struct device *gpio;
 	static uint8_t rgb[3] = { 0, 0, 0 };
-	struct sensor_trigger sensor_trig_conf_red = {
-		.type = SENSOR_TRIG_THRESHOLD,
-		.chan = SENSOR_CHAN_RED,
-	};
-	struct sensor_trigger sensor_trig_conf_green = {
-		.type = SENSOR_TRIG_THRESHOLD,
-		.chan = SENSOR_CHAN_GREEN,
-	};
-	struct sensor_trigger sensor_trig_conf_blue = {
-		.type = SENSOR_TRIG_THRESHOLD,
-		.chan = SENSOR_CHAN_BLUE,
-	};
+
+	// struct sensor_trigger sensor_trig_conf = {
+	// 	.type = SENSOR_TRIG_THRESHOLD,
+	// 	.chan = SENSOR_CHAN_RED,
+	// };
 
 	if (IS_ENABLED(CONFIG_BH1749_TRIGGER)) {
-		bh1479_set_attribute(dev, SENSOR_CHAN_ALL,
-				     SENSOR_ATTR_LOWER_THRESH,
-				     THRESHOLD_LOWER);
-		bh1479_set_attribute(dev, SENSOR_CHAN_ALL,
-				     SENSOR_ATTR_UPPER_THRESH,
-				     THRESHOLD_UPPER);
+		// bh1479_set_attribute(dev, SENSOR_CHAN_ALL,
+		// 		     SENSOR_ATTR_LOWER_THRESH,
+		// 		     THRESHOLD_LOWER);
+		// bh1479_set_attribute(dev, SENSOR_CHAN_ALL,
+		// 		     SENSOR_ATTR_UPPER_THRESH,
+		// 		     THRESHOLD_UPPER);
 
-		if (sensor_trigger_set(dev, &sensor_trig_conf, trigger_handler)) {
-			printk("Could not set trigger\n");
-			return;
-		}
+		// if (sensor_trigger_set(dev, &sensor_trig_conf, bh1749_trigger_handler)) {
+		// 	printk("Could not set trigger\n");
+		// 	return;
+		// }
 		struct sensor_trigger sensor_trig_conf = {
 			.type = SENSOR_TRIG_DATA_READY,
 			.chan = SENSOR_CHAN_RED,
@@ -420,130 +417,131 @@ static int pca20035_BH1749(void)
 
 		return 0;
 	}
+}
 
-	static int pca20035_test_button(void)
-	{
-		u32_t volatile state, newstate, timeout = 0,
-			       button_test_timeout = 200000;
+static int pca20035_test_button(void)
+{
+	u32_t volatile state, newstate, timeout = 0,
+		       button_test_timeout = 200000;
 
-		printk("[ACTION]: Please press the button ...\n");
-		state = dk_get_buttons();
-		newstate = state;
-		dk_set_leds(LEDS_RED);
-		while ((state == newstate) && (timeout < button_test_timeout)) {
-			newstate = dk_get_buttons();
-			timeout++;
-			k_sleep(1);
-		}
-		printk("timeout: %d \n", timeout);
-		prod_assert_not_equal(timeout, button_test_timeout, -ETIMEDOUT,
-				      "Button test timed out");
-		dk_set_leds(DK_NO_LEDS_MSK);
-		return 0;
+	printk("[ACTION]: Please press the button ...\n");
+	state = dk_get_buttons();
+	newstate = state;
+	dk_set_leds(LEDS_RED);
+	while ((state == newstate) && (timeout < button_test_timeout)) {
+		newstate = dk_get_buttons();
+		timeout++;
+		k_sleep(1);
 	}
+	printk("timeout: %d \n", timeout);
+	prod_assert_not_equal(timeout, button_test_timeout, -ETIMEDOUT,
+			      "Button test timed out");
+	dk_set_leds(DK_NO_LEDS_MSK);
+	return 0;
+}
 
-	static int pca20035_test_buzzer(void)
-	{
-		volatile int err_code = 0xFF;
-		static struct device *dev;
-		static u32_t period = PERIOD;
-		static u32_t duty_cycle = DUTY_CYCLE;
+static int pca20035_test_buzzer(void)
+{
+	volatile int err_code = 0xFF;
+	static struct device *dev;
+	static u32_t period = PERIOD;
+	static u32_t duty_cycle = DUTY_CYCLE;
 
-		dev = device_get_binding(DT_NORDIC_NRF_PWM_PWM_0_LABEL);
-		prod_assert_not_null(dev, -ENODEV, "Failed to get binding");
-		printk("Turning buzzer ON\n");
-		err_code = pwm_pin_set_usec(dev, BUZZER_PIN, period, duty_cycle);
-		prod_assert_equal(err_code, 0, -EIO, "Failed to set pwm pin");
-		k_sleep(1500);
-		printk("Turning buzzer OFF\n");
-		err_code = pwm_pin_set_usec(dev, BUZZER_PIN, period, 0);
-		prod_assert_equal(err_code, 0, -EIO, "Failed to clear pwm pin");
-		return 0;
-	}
+	dev = device_get_binding(DT_NORDIC_NRF_PWM_PWM_0_LABEL);
+	prod_assert_not_null(dev, -ENODEV, "Failed to get binding");
+	printk("Turning buzzer ON\n");
+	err_code = pwm_pin_set_usec(dev, BUZZER_PIN, period, duty_cycle);
+	prod_assert_equal(err_code, 0, -EIO, "Failed to set pwm pin");
+	k_sleep(4000);
+	printk("Turning buzzer OFF\n");
+	err_code = pwm_pin_set_usec(dev, BUZZER_PIN, period, 0);
+	prod_assert_equal(err_code, 0, -EIO, "Failed to clear pwm pin");
+	return 0;
+}
 
-	static int button_handler(u32_t buttons, u32_t has_changed)
-	{
-		return;
-	}
+static int button_handler(u32_t buttons, u32_t has_changed)
+{
+	return;
+}
 
 #if defined(ENABLE_RTT_CMD_GET)
-	static void check_rtt_command(u8_t *data, u8_t len)
-	{
-		// static u8_t * msg;
-		memcpy(msg, data, 3);
-		printk("Params received: %s \r\n", msg);
-		m_test_params_received = true;
+static void check_rtt_command(u8_t *data, u8_t len)
+{
+	// static u8_t * msg;
+	memcpy(msg, data, 3);
+	printk("Params received: %s \r\n", msg);
+	m_test_params_received = true;
+}
+#endif
+
+void main(void)
+{
+	int err;
+
+	err = dk_leds_init();
+	if (err) {
+		printk("Could not initialize leds, err code: %d\n", err);
+	}
+	err = dk_buttons_init(&button_handler);
+	if (err) {
+		printk("Could not initialize buttons, err code: %d\n", err);
+	}
+
+	printk("Starting production test - thingy:91\r\n");
+
+#if defined(ENABLE_RTT_CMD_GET)
+	printk("Waiting for test parameters...\r\n");
+	while (!m_test_params_received) {
+		if (SEGGER_RTT_HasKey()) {
+			// Fetch the first key in the buffer
+			m_rtt_keys[m_rtt_rx_keyindex] = SEGGER_RTT_GetKey();
+
+			// Q is set as "EOL", so parse when received
+			if (m_rtt_keys[m_rtt_rx_keyindex] == 'Q') {
+				check_rtt_command(m_rtt_keys,
+						  ++m_rtt_rx_keyindex);
+				m_rtt_rx_keyindex = 0;
+				memset(m_rtt_keys, 0, sizeof(m_rtt_keys));
+			} else {
+				// Keep buffering data
+				m_rtt_rx_keyindex++;
+			}
+		}
 	}
 #endif
 
-	void main(void)
-	{
-		int err;
-
-		err = dk_leds_init();
-		if (err) {
-			printk("Could not initialize leds, err code: %d\n", err);
+	dk_set_leds(LEDS_RED);
+	k_sleep(200);
+	dk_set_leds(DK_NO_LEDS_MSK);
+	dk_set_leds(LEDS_GREEN);
+	k_sleep(200);
+	dk_set_leds(DK_NO_LEDS_MSK);
+	dk_set_leds(LEDS_BLUE);
+	k_sleep(200);
+	dk_set_leds(DK_NO_LEDS_MSK);
+	printk(".\r\n");
+	printk(".\r\n");
+	printk(".\r\n");
+	printk(".\r\n");
+	/* This delay is added to improve rtt buffer loss on the host side.
+	 * Might be that we can improve this with other debuggers...
+	 */
+	k_sleep(100);
+	while (1) {
+		run_test(&pca20035_BH1749, "pca20035_BH1749");
+		run_test(&pca20035_ADXL372, "pca20035_ADXL372");
+		run_test(&pca20035_ADXL362, "pca20035_ADXL362");
+		run_test(&pca20035_BME680, "pca20035_BME680");
+		// run_test(&pca20035_test_button, "pca20035_button");
+		run_test(&pca20035_test_buzzer, "pca20035_buzzer");
+		run_test(&measure_voltage, "measure_voltage");
+		k_sleep(500);
+		// Stop execution if test failed.
+		all_tests_succeeded ? printk("\r\nTEST SUITE SUCCESS!\r\n") :
+		printk("\r\nTEST SUITE FAILED!\r\n");
+		if (!all_tests_succeeded) {
+			break;
 		}
-		err = dk_buttons_init(&button_handler);
-		if (err) {
-			printk("Could not initialize buttons, err code: %d\n", err);
-		}
-
-		printk("Starting production test - thingy:91\r\n");
-
-#if defined(ENABLE_RTT_CMD_GET)
-		printk("Waiting for test parameters...\r\n");
-		while (!m_test_params_received) {
-			if (SEGGER_RTT_HasKey()) {
-				// Fetch the first key in the buffer
-				m_rtt_keys[m_rtt_rx_keyindex] = SEGGER_RTT_GetKey();
-
-				// Q is set as "EOL", so parse when received
-				if (m_rtt_keys[m_rtt_rx_keyindex] == 'Q') {
-					check_rtt_command(m_rtt_keys,
-							  ++m_rtt_rx_keyindex);
-					m_rtt_rx_keyindex = 0;
-					memset(m_rtt_keys, 0, sizeof(m_rtt_keys));
-				} else {
-					// Keep buffering data
-					m_rtt_rx_keyindex++;
-				}
-			}
-		}
-#endif
-
-		dk_set_leds(LEDS_RED);
-		k_sleep(200);
-		dk_set_leds(DK_NO_LEDS_MSK);
-		dk_set_leds(LEDS_GREEN);
-		k_sleep(200);
-		dk_set_leds(DK_NO_LEDS_MSK);
-		dk_set_leds(LEDS_BLUE);
-		k_sleep(200);
-		dk_set_leds(DK_NO_LEDS_MSK);
-		printk(".\r\n");
-		printk(".\r\n");
-		printk(".\r\n");
-		printk(".\r\n");
-		/* This delay is added to improve rtt buffer loss on the host side.
-		 * Might be that we can improve this with other debuggers...
-		 */
-		k_sleep(4000);
-		while (1) {
-			run_test(&pca20035_BH1749, "pca20035_BH1749");
-			run_test(&pca20035_ADXL372, "pca20035_ADXL372");
-			run_test(&pca20035_ADXL362, "pca20035_ADXL362");
-			run_test(&pca20035_BME680, "pca20035_BME680");
-			run_test(&pca20035_test_button, "pca20035_button");
-			run_test(&pca20035_test_buzzer, "pca20035_buzzer");
-			run_test(&measure_voltage, "measure_voltage");
-			k_sleep(500);
-			// Stop execution if test failed.
-			all_tests_succeeded ? printk("\r\nTEST SUITE SUCCESS!\r\n") :
-			printk("\r\nTEST SUITE FAILED!\r\n");
-			if (!all_tests_succeeded) {
-				break;
-			}
-		}
-		dk_set_leds(LEDS_PATTERN_WAIT);
 	}
+	dk_set_leds(LEDS_PATTERN_WAIT);
+}
