@@ -5,6 +5,7 @@
  */
 
 #include <init.h>
+#include <nrfx.h>
 
 #if defined(CONFIG_BSD_LIBRARY) && defined(CONFIG_NET_SOCKETS_OFFLOAD)
 #include <net/socket.h>
@@ -88,6 +89,8 @@ static int pca20035_board_init(struct device *dev)
 		LOG_ERR("pca20035_magpio_configure failed with error: %d", err);
 		return err;
 	}
+
+	//NRF_UICR_S->SECUREAPPROTECT = 0xFFFFFFFF;
 
 	return 0;
 }

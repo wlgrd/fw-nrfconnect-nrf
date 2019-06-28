@@ -360,11 +360,12 @@ static int pca20035_BH1749(void)
 		gpio_pin_write(gpio, SENSE_LED_R, 1);
 		gpio_pin_write(gpio, SENSE_LED_G, 0);
 		gpio_pin_write(gpio, SENSE_LED_B, 0);
+		printk("[CURRENT]: #SENSE_LED_R#\n");
 
 		sensor_trigger_set(dev, &sensor_trig_conf, bh1749_trigger_handler);
 
 		for (u8_t i = 0; i < 3; i++) {
-			k_sleep(300);
+			k_sleep(3000);
 			err = sensor_sample_fetch_chan(dev, SENSOR_CHAN_ALL);
 			prod_assert_equal(err, 0, -EIO, "Failed to fetch sensor data");
 			k_sleep(200);
@@ -383,30 +384,39 @@ static int pca20035_BH1749(void)
 			case 0:
 				printk("BH1749 red: %d (Sum of others: %d)\r\n", rgb[0],
 				       (rgb[1] + rgb[2]));
-				if (rgb[0] < (rgb[1] + rgb[2])) {
-					prod_assert_unreachable("RED failed");
-				}
 				/* Set SENSE LEDs for next iteration */
 				gpio_pin_write(gpio, SENSE_LED_R, 0);
 				gpio_pin_write(gpio, SENSE_LED_G, 1);
 				gpio_pin_write(gpio, SENSE_LED_B, 0);
+				printk("[CURRENT]: #SENSE_LED_G#");
+
+				if (rgb[0] < (rgb[1] + rgb[2])) {
+					prod_assert_unreachable("RED failed\n");
+				}
 				break;
 			case 1:
-				printk("BH1749 green: %d (Sum of others: %d)\r\n", rgb[1],
-				       (rgb[0] + rgb[2]));
-				if (rgb[1] < (rgb[0] + rgb[2])) {
-					prod_assert_unreachable("GREEN failed");
-				}
+				printk("BH1749 green: %d (Red comparison: %d)\r\n", rgb[1],
+					rgb[0]);
 				/* Set SENSE LEDs for next iteration */
 				gpio_pin_write(gpio, SENSE_LED_R, 0);
 				gpio_pin_write(gpio, SENSE_LED_G, 0);
 				gpio_pin_write(gpio, SENSE_LED_B, 1);
+				printk("[CURRENT]: #SENSE_LED_B#");
+
+				if (rgb[1] < rgb[0]) {
+					prod_assert_unreachable("GREEN failed\n");
+				}
 				break;
 			case 2:
-				printk("BH1749 blue: %d (Sum of others: %d)\r\n", rgb[2],
-				       (rgb[1] + rgb[0]));
-				if (rgb[2] < (rgb[1] / 2 + rgb[0])) {
-					prod_assert_unreachable("BLUE failed");
+				printk("BH1749 blue: %d (Red comparison: %d)\r\n", rgb[2],
+				       rgb[0]);
+
+				gpio_pin_write(gpio, SENSE_LED_R, 0);
+				gpio_pin_write(gpio, SENSE_LED_G, 0);
+				gpio_pin_write(gpio, SENSE_LED_B, 0);
+
+				if (rgb[2] < rgb[0]) {
+					prod_assert_unreachable("BLUE failed\n");
 				}
 				break;
 			default:
@@ -450,6 +460,7 @@ static int pca20035_test_buzzer(void)
 	dev = device_get_binding(DT_NORDIC_NRF_PWM_PWM_0_LABEL);
 	prod_assert_not_null(dev, -ENODEV, "Failed to get binding");
 	printk("Turning buzzer ON\n");
+	printk("[CURRENT]: #Buzzer#\n");
 	err_code = pwm_pin_set_usec(dev, BUZZER_PIN, period, duty_cycle);
 	prod_assert_equal(err_code, 0, -EIO, "Failed to set pwm pin");
 	k_sleep(4000);
@@ -510,14 +521,20 @@ void main(void)
 	}
 #endif
 
+	dk_set_leds(DK_NO_LEDS_MSK);
+	printk("[CURRENT]: #Baseline#\n");
+	k_sleep(1000);
 	dk_set_leds(LEDS_RED);
-	k_sleep(200);
+	printk("[CURRENT]: #LEDS_RED#\n");
+	k_sleep(1000);
 	dk_set_leds(DK_NO_LEDS_MSK);
 	dk_set_leds(LEDS_GREEN);
-	k_sleep(200);
+	printk("[CURRENT]: #LEDS_GREEN#\n");
+	k_sleep(1000);
 	dk_set_leds(DK_NO_LEDS_MSK);
 	dk_set_leds(LEDS_BLUE);
-	k_sleep(200);
+	printk("[CURRENT]: #LEDS_BLUE#\n");
+	k_sleep(1000);
 	dk_set_leds(DK_NO_LEDS_MSK);
 	printk(".\r\n");
 	printk(".\r\n");
@@ -527,21 +544,18 @@ void main(void)
 	 * Might be that we can improve this with other debuggers...
 	 */
 	k_sleep(100);
-	while (1) {
-		run_test(&pca20035_BH1749, "pca20035_BH1749");
-		run_test(&pca20035_ADXL372, "pca20035_ADXL372");
-		run_test(&pca20035_ADXL362, "pca20035_ADXL362");
-		run_test(&pca20035_BME680, "pca20035_BME680");
-		// run_test(&pca20035_test_button, "pca20035_button");
-		run_test(&pca20035_test_buzzer, "pca20035_buzzer");
-		run_test(&measure_voltage, "measure_voltage");
-		k_sleep(500);
-		// Stop execution if test failed.
-		all_tests_succeeded ? printk("\r\nTEST SUITE SUCCESS!\r\n") :
-		printk("\r\nTEST SUITE FAILED!\r\n");
-		if (!all_tests_succeeded) {
-			break;
-		}
-	}
+
+	run_test(&pca20035_BH1749, "pca20035_BH1749");
+	run_test(&pca20035_ADXL372, "pca20035_ADXL372");
+	run_test(&pca20035_ADXL362, "pca20035_ADXL362");
+	run_test(&pca20035_BME680, "pca20035_BME680");
+	// run_test(&pca20035_test_button, "pca20035_button");
+	run_test(&pca20035_test_buzzer, "pca20035_buzzer");
+	run_test(&measure_voltage, "measure_voltage");
+	k_sleep(500);
+	// Stop execution if test failed.
+	all_tests_succeeded ? printk("\r\nTEST SUITE SUCCESS!\r\n") :
+	printk("\r\nTEST SUITE FAILED!\r\n");
+
 	dk_set_leds(LEDS_PATTERN_WAIT);
 }
