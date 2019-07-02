@@ -32,10 +32,12 @@
 #define ADC_CHANNEL_ID1 1
 #define ADC_CHANNEL_ID2 2
 #define ADC_CHANNEL_INPUT0 NRF_SAADC_INPUT_AIN5
-#define ADC_CHANNEL_INPUT1 NRF_SAADC_INPUT_AIN3
+#define ADC_CHANNEL_INPUT1 NRF_SAADC_INPUT_AIN0
 #define ADC_CHANNEL_INPUT2 NRF_SAADC_INPUT_AIN7
 #define ADC_OVERSAMPLING 2 /* 2^ADC_OVERSAMPLING samples are averaged */
 #define ADC_BUFFER_SIZE 3
+#define LED_POLL_TIME 100
+#define BUZZER_BEEP_INTERVAL 100
 
 #else
 #error "Unsupported board."
@@ -77,6 +79,7 @@ static K_SEM_DEFINE(sem, 0, 1);
 #define LEDS_GREEN DK_LED2_MSK
 #define LEDS_BLUE DK_LED3_MSK
 #define BUZZER_PIN 28 // TP7
+#define TOGGLE_PIN 16 // AIN3
 
 /* There is an issue with the pwm driver, causing a 300us delay */
 #define PWM_OFFSET 300
@@ -89,14 +92,6 @@ static K_SEM_DEFINE(sem, 0, 1);
 #define SENSE_LED_R             0
 #define SENSE_LED_G             1
 #define SENSE_LED_B             2
-
-#if defined(ENABLE_RTT_CMD_GET)
-#include <SEGGER_RTT.h>
-static u8_t m_rtt_keys[20];
-static u8_t m_rtt_rx_keyindex = 0;
-bool m_test_params_received = false;
-static u8_t msg[3];
-#endif // ENABLE_RTT_CMD_GET
 
 bool all_tests_succeeded = true;
 struct sensor_value temp;
@@ -137,6 +132,22 @@ static const struct adc_channel_cfg m_channel_cfg2 = {
 	.input_positive = ADC_CHANNEL_INPUT2,
 };
 
+static void toggle_indicator_pin(void)
+{
+	struct device *gpio;
+	static bool pin_state = false;
+
+	gpio = device_get_binding(DT_GPIO_P0_DEV_NAME);
+
+	if (pin_state) {
+		gpio_pin_write(gpio, TOGGLE_PIN, 0);
+		pin_state = false;
+	} else {
+		gpio_pin_write(gpio, TOGGLE_PIN, 1);
+		pin_state = true;
+	}
+}
+
 static struct device *init_adc(void)
 {
 	int ret;
@@ -162,11 +173,10 @@ static struct device *init_adc(void)
 	return adc_dev;
 }
 
-static int measure_current(enum current_component component)
+static int measure_current_and_voltage(enum current_component component)
 {
 	int volatile ret;
-	static bool adc_is_init = false;
-	static struct device *dev;
+	struct device *dev;
 	float ma_current;
 
 	const struct adc_sequence sequence = {
@@ -176,11 +186,11 @@ static int measure_current(enum current_component component)
 		.resolution = ADC_RESOLUTION,
 	};
 
-	if (adc_is_init == false) {
-		dev = init_adc();
-		prod_assert_not_null(dev, -ENODEV, "Failed to get binding");
-		k_sleep(100);
-	}
+	k_sleep(200);
+	toggle_indicator_pin();
+
+	dev = device_get_binding("ADC_0");
+	prod_assert_not_null(dev, -ENODEV, "Cannot get ADC device");
 
 	ret = adc_read(dev, &sequence);
 	prod_assert_equal(ret, 0, -EIO, "adc_read() failed with code %d\r\n");
@@ -216,7 +226,9 @@ static int measure_current(enum current_component component)
 			printk("[CURRENT]: #Buzzer# current: ");
 			break;
 	}
-	printf("%.2f \r\n", ma_current);
+	printf("%.3f mA - voltage: %.3f V\r\n", ma_current/1000, voltage/1000);
+
+	toggle_indicator_pin();
 	return 0;
 }
 
@@ -241,7 +253,6 @@ static int pca20035_ADXL372(void)
 {
 	int err = 0;
 
-	dk_set_leds(LEDS_RED);
 	struct device *dev;
 	dev = device_get_binding("ADXL372");
 	if (dev == NULL) {
@@ -264,7 +275,6 @@ static int pca20035_ADXL372(void)
 	err = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_Z, &temp);
 	prod_assert_equal(err, 0, -EIO, "Failed to accel z");
 	printk("ADXL372 Z: %d.%d\r\n", temp.val1, temp.val2);
-	dk_set_leds(DK_NO_LEDS_MSK);
 	return 0;
 }
 
@@ -272,7 +282,6 @@ static int pca20035_ADXL362(void)
 {
 	int err = 0;
 
-	dk_set_leds(LEDS_BLUE);
 	struct device *dev;
 	dev = device_get_binding("ADXL362");
 	if (dev == NULL) {
@@ -292,7 +301,6 @@ static int pca20035_ADXL362(void)
 	err = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_Z, &temp);
 	prod_assert_equal(err, 0, -EIO, "Failed to accel z");
 	printk("ADXL362 Z: %d.%d\r\n", temp.val1, temp.val2);
-	dk_set_leds(DK_NO_LEDS_MSK);
 	return 0;
 }
 
@@ -300,7 +308,6 @@ static int pca20035_BME680(void)
 {
 	int err = 0;
 
-	dk_set_leds(LEDS_GREEN);
 	struct device *dev;
 	dev = device_get_binding("BME680");
 	// prod_assert_not_null(dev, "Failed to get sensor");
@@ -327,7 +334,6 @@ static int pca20035_BME680(void)
 	prod_assert_equal(err, 0, -EIO, "Failed to get gas");
 	printk("BME680 gas resistance: %d ohms\r\n", temp.val1);
 
-	dk_set_leds(DK_NO_LEDS_MSK);
 	return 0;
 }
 
@@ -336,41 +342,53 @@ static int pca20035_BH1749(void)
 	struct device *dev;
 	struct device *gpio;
 
-	if (IS_ENABLED(CONFIG_BH1749_TRIGGER)) {
-		gpio = device_get_binding(DT_GPIO_P0_DEV_NAME);
-		prod_assert_not_null(gpio, -ENODEV, "Failed to get binding to gpio");
-		gpio_pin_configure(gpio, SENSE_LED_R, GPIO_DIR_OUT);
-		gpio_pin_configure(gpio, SENSE_LED_G, GPIO_DIR_OUT);
-		gpio_pin_configure(gpio, SENSE_LED_B, GPIO_DIR_OUT);
+	dev = device_get_binding("BH1749");
+	prod_assert_not_null(dev, -ENODEV, "Failed to get binding");
 
-		dev = device_get_binding("BH1749");
-		prod_assert_not_null(dev, -ENODEV, "Failed to get binding");
+	gpio = device_get_binding(DT_GPIO_P0_DEV_NAME);
+	prod_assert_not_null(gpio, -ENODEV, "Failed to get binding to gpio");
 
-		gpio_pin_write(gpio, SENSE_LED_R, 1);
-		gpio_pin_write(gpio, SENSE_LED_G, 0);
-		gpio_pin_write(gpio, SENSE_LED_B, 0);
-		k_sleep(3000);
-		measure_current(CUR_SENSE_LED_R);
+	gpio_pin_write(gpio, SENSE_LED_R, 0);
+	gpio_pin_write(gpio, SENSE_LED_G, 0);
+	gpio_pin_write(gpio, SENSE_LED_B, 0);
+	k_sleep(LED_POLL_TIME);
+
+	gpio_pin_write(gpio, SENSE_LED_R, 1);
+	gpio_pin_write(gpio, SENSE_LED_G, 0);
+	gpio_pin_write(gpio, SENSE_LED_B, 0);
+	measure_current_and_voltage(CUR_SENSE_LED_R);
+	k_sleep(LED_POLL_TIME);
+	gpio_pin_write(gpio, SENSE_LED_R, 0);
+	gpio_pin_write(gpio, SENSE_LED_G, 0);
+	gpio_pin_write(gpio, SENSE_LED_B, 0);
+	k_sleep(LED_POLL_TIME);
 
 
-		gpio_pin_write(gpio, SENSE_LED_R, 0);
-		gpio_pin_write(gpio, SENSE_LED_G, 1);
-		gpio_pin_write(gpio, SENSE_LED_B, 0);
-		k_sleep(3000);
-		measure_current(CUR_SENSE_LED_G);
+	gpio_pin_write(gpio, SENSE_LED_R, 0);
+	gpio_pin_write(gpio, SENSE_LED_G, 1);
+	gpio_pin_write(gpio, SENSE_LED_B, 0);
+	measure_current_and_voltage(CUR_SENSE_LED_G);
+	k_sleep(LED_POLL_TIME);
+	gpio_pin_write(gpio, SENSE_LED_R, 0);
+	gpio_pin_write(gpio, SENSE_LED_G, 0);
+	gpio_pin_write(gpio, SENSE_LED_B, 0);
+	k_sleep(LED_POLL_TIME);
 
-		gpio_pin_write(gpio, SENSE_LED_R, 0);
-		gpio_pin_write(gpio, SENSE_LED_G, 0);
-		gpio_pin_write(gpio, SENSE_LED_B, 1);
-		k_sleep(3000);
-		measure_current(CUR_SENSE_LED_B);
+	gpio_pin_write(gpio, SENSE_LED_R, 0);
+	gpio_pin_write(gpio, SENSE_LED_G, 0);
+	gpio_pin_write(gpio, SENSE_LED_B, 1);
+	measure_current_and_voltage(CUR_SENSE_LED_B);
+	k_sleep(LED_POLL_TIME);
+	gpio_pin_write(gpio, SENSE_LED_R, 0);
+	gpio_pin_write(gpio, SENSE_LED_G, 0);
+	gpio_pin_write(gpio, SENSE_LED_B, 0);
+	k_sleep(LED_POLL_TIME);
 
-		gpio_pin_write(gpio, SENSE_LED_R, 0);
-		gpio_pin_write(gpio, SENSE_LED_G, 0);
-		gpio_pin_write(gpio, SENSE_LED_B, 0);
+	gpio_pin_write(gpio, SENSE_LED_R, 0);
+	gpio_pin_write(gpio, SENSE_LED_G, 0);
+	gpio_pin_write(gpio, SENSE_LED_B, 0);
 
-		return 0;
-	}
+	return 0;
 }
 
 static int pca20035_test_buzzer(void)
@@ -383,77 +401,62 @@ static int pca20035_test_buzzer(void)
 	dev = device_get_binding(DT_NORDIC_NRF_PWM_PWM_0_LABEL);
 	prod_assert_not_null(dev, -ENODEV, "Failed to get binding");
 	printk("Turning buzzer ON\n");
-	measure_current(CUR_BUZZER);
 	err_code = pwm_pin_set_usec(dev, BUZZER_PIN, period, duty_cycle);
 	prod_assert_equal(err_code, 0, -EIO, "Failed to set pwm pin");
-	k_sleep(1000);
+	measure_current_and_voltage(CUR_BUZZER);
+	k_sleep(BUZZER_BEEP_INTERVAL);
 	printk("Turning buzzer OFF\n");
 	err_code = pwm_pin_set_usec(dev, BUZZER_PIN, period, 0);
 	prod_assert_equal(err_code, 0, -EIO, "Failed to clear pwm pin");
 	return 0;
 }
 
-#if defined(ENABLE_RTT_CMD_GET)
-static void check_rtt_command(u8_t *data, u8_t len)
-{
-	// static u8_t * msg;
-	memcpy(msg, data, 3);
-	printk("Params received: %s \r\n", msg);
-	m_test_params_received = true;
-}
-#endif
-
 void main(void)
 {
 	int err;
+	struct device *gpio;
+	struct device *adc_dev;
 
 	err = dk_leds_init();
 	if (err) {
 		printk("Could not initialize leds, err code: %d\n", err);
 	}
 
+	gpio = device_get_binding(DT_GPIO_P0_DEV_NAME);
+	prod_assert_not_null(gpio, -ENODEV, "Failed to get binding to gpio");
+	gpio_pin_configure(gpio, TOGGLE_PIN, GPIO_DIR_OUT);
+	gpio_pin_configure(gpio, SENSE_LED_R, GPIO_DIR_OUT);
+	gpio_pin_configure(gpio, SENSE_LED_G, GPIO_DIR_OUT);
+	gpio_pin_configure(gpio, SENSE_LED_B, GPIO_DIR_OUT);
+
+	gpio_pin_write(gpio, SENSE_LED_R, 0);
+	gpio_pin_write(gpio, SENSE_LED_G, 0);
+	gpio_pin_write(gpio, SENSE_LED_B, 0);
+
+	adc_dev = init_adc();
+	prod_assert_not_null(adc_dev, -ENODEV, "Failed to get binding to adc");
+	k_sleep(100);
+
 	printk("Starting production test - thingy:91\r\n");
 
-#if defined(ENABLE_RTT_CMD_GET)
-	printk("Waiting for test parameters...\r\n");
-	while (!m_test_params_received) {
-		if (SEGGER_RTT_HasKey()) {
-			// Fetch the first key in the buffer
-			m_rtt_keys[m_rtt_rx_keyindex] = SEGGER_RTT_GetKey();
-
-			// Q is set as "EOL", so parse when received
-			if (m_rtt_keys[m_rtt_rx_keyindex] == 'Q') {
-				check_rtt_command(m_rtt_keys,
-						  ++m_rtt_rx_keyindex);
-				m_rtt_rx_keyindex = 0;
-				memset(m_rtt_keys, 0, sizeof(m_rtt_keys));
-			} else {
-				// Keep buffering data
-				m_rtt_rx_keyindex++;
-			}
-		}
-	}
-#endif
-
 	dk_set_leds(DK_NO_LEDS_MSK);
-	measure_current(CUR_BASE);
-	k_sleep(1000);
+	measure_current_and_voltage(CUR_BASE);
+	k_sleep(LED_POLL_TIME);
 	dk_set_leds(LEDS_RED);
-	measure_current(CUR_LEDS_RED);
-	k_sleep(1000);
+	measure_current_and_voltage(CUR_LEDS_RED);
+	k_sleep(LED_POLL_TIME);
 	dk_set_leds(DK_NO_LEDS_MSK);
+	k_sleep(LED_POLL_TIME);
 	dk_set_leds(LEDS_GREEN);
-	measure_current(CUR_LEDS_GREEN);
-	k_sleep(1000);
+	measure_current_and_voltage(CUR_LEDS_GREEN);
+	k_sleep(LED_POLL_TIME);
 	dk_set_leds(DK_NO_LEDS_MSK);
+	k_sleep(LED_POLL_TIME);
 	dk_set_leds(LEDS_BLUE);
-	measure_current(CUR_LEDS_BLUE);
-	k_sleep(1000);
+	measure_current_and_voltage(CUR_LEDS_BLUE);
+	k_sleep(LED_POLL_TIME);
 	dk_set_leds(DK_NO_LEDS_MSK);
-	/* This delay is added to improve rtt buffer loss on the host side.
-	 * Might be that we can improve this with other debuggers...
-	 */
-	k_sleep(100);
+	k_sleep(LED_POLL_TIME);
 
 	run_test(&pca20035_BH1749, "pca20035_BH1749");
 	run_test(&pca20035_ADXL372, "pca20035_ADXL372");
@@ -467,6 +470,4 @@ void main(void)
 	all_tests_succeeded ? printk("\r\nTEST SUITE SUCCESS!\r\n") :
 	printk("\r\nTEST SUITE FAILED!\r\n");
 	printk("\n");
-
-	dk_set_leds(LEDS_PATTERN_WAIT);
 }
