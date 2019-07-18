@@ -6,6 +6,7 @@
 
 #include <init.h>
 #include <drivers/adp536x.h>
+#include <nrfx.h>
 
 #include <logging/log.h>
 LOG_MODULE_REGISTER(board_secure, CONFIG_BOARD_LOG_LEVEL);
@@ -95,3 +96,14 @@ static int pca20035_board_init(struct device *dev)
 }
 
 SYS_INIT(pca20035_board_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
+
+/* Do not trust the brownout reset */
+static int pca20035_board_pre_init(struct device *dev)
+{
+	if (NRF_POWER->RESETREAS == 0) {
+		NVIC_SystemReset();
+	}
+	return 0;
+}
+
+SYS_INIT(pca20035_board_pre_init, PRE_KERNEL_1, 0);
