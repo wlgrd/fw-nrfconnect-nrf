@@ -256,7 +256,7 @@ static int pca20035_ADXL372(void)
 	struct device *dev;
 	dev = device_get_binding("ADXL372");
 	if (dev == NULL) {
-		printk("[WARNING] ADXL372, no binding established.\n");
+		printk("[ERROR] ADXL372, no binding established.\n");
 		return 0;
 	}
 	prod_assert_not_null(dev, -ENODEV, "Failed to get binding");
@@ -285,7 +285,7 @@ static int pca20035_ADXL362(void)
 	struct device *dev;
 	dev = device_get_binding("ADXL362");
 	if (dev == NULL) {
-		printk("[WARNING] ADXL362, no binding established.\n");
+		printk("[ERROR] ADXL362, no binding established.\n");
 		return 0;
 	}
 	prod_assert_not_null(dev, -ENODEV, "Failed to get binding");
